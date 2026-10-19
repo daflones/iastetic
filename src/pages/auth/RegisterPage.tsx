@@ -29,6 +29,7 @@ export default function RegisterPage() {
       setError(error.message.includes('already') ? 'Este e-mail já está cadastrado. Faça login.' : error.message)
       return
     }
+    ;(window as any).fbq?.('track', 'CompleteRegistration')
     if (data.session) { nav('/onboarding'); return }
     setEmailSent(true)
   }
