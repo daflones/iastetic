@@ -1,7 +1,7 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { requireAdmin, requireUser, serviceClient } from '../_shared/db.ts'
 import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText, sendMedia, checkWhatsAppNumbers } from '../_shared/evolution.ts'
-import { chat, generateImage, type ChatMessage } from '../_shared/nvidia.ts'
+import { chat, generateImage, transcribeAudio, type ChatMessage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
 
 // Painel administrativo da plataforma IAstetic
@@ -214,10 +214,15 @@ Deno.serve(async (req) => {
 
       // ---------- assistente IA do admin ----------
       case 'admin_assistant': {
-        const msg = str(body.message ?? body.question, 2000)
-        if (!msg) throw new ApiError(400, 'EMPTY', 'Mensagem vazia.')
+        let msg = str(body.message ?? body.question, 2000)
+        let transcript: string | null = null
+        if (!msg && body.audio) {
+          transcript = await transcribeAudio(String(body.audio), str(body.audio_mime, 100) || 'audio/webm')
+          msg = transcript.slice(0, 2000)
+        }
+        if (!msg) throw new ApiError(400, 'EMPTY', 'Não entendi o áudio — tenta falar de novo ou escreve.')
         const reply = await runAdminAssistant(db, msg, body.history ?? [])
-        return json({ ok: true, data: { reply } })
+        return json({ ok: true, data: { reply, transcript } })
       }
 
       // ================= PROSPECÇÃO =================
