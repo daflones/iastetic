@@ -39,7 +39,10 @@ export async function setWebhook(instanceName: string, url: string, secret?: str
     },
   })
 }
-export async function connectInstance(name: string) { return evo(`/instance/connect/${encodeURIComponent(name)}`, 'GET') }
+export async function connectInstance(name: string, number?: string) {
+  const q = number ? `?number=${number.replace(/\D/g, '')}` : ''
+  return evo(`/instance/connect/${encodeURIComponent(name)}${q}`, 'GET')
+}
 export async function fetchInstances() { return evo('/instance/fetchInstances') }
 export async function connectionState(name: string) { return evo(`/instance/connectionState/${encodeURIComponent(name)}`) }
 export async function logoutInstance(name: string) { return evo(`/instance/logout/${encodeURIComponent(name)}`, 'DELETE') }

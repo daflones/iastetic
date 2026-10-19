@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Loader2, Plus, PowerOff, QrCode, RefreshCw, Trash2 } from 'lucide-react'
+import { Loader2, Plus, PowerOff, QrCode, RefreshCw, Smartphone, Trash2 } from 'lucide-react'
+import { maskPhoneBR, onlyDigits } from '@/lib/validators'
 import { supabase, callFn } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import type { Instance } from '@/lib/types'
@@ -15,6 +16,8 @@ export default function WhatsappPage() {
   const [error, setError] = useState('')
   const [naming, setNaming] = useState(false)
   const [instName, setInstName] = useState('')
+  const [pairMode, setPairMode] = useState(false)
+  const [pairPhone, setPairPhone] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   const onboarding = params.get('onboarding') === '1'
@@ -65,10 +68,10 @@ export default function WhatsappPage() {
     setBusy(null)
   }
 
-  async function act(action: string, id: string) {
+  async function act(action: string, id: string, phone?: string) {
     setBusy(id + action)
     try {
-      const r = await callFn<any>('evolution-manage', { action, instance_id: id })
+      const r = await callFn<any>('evolution-manage', { action, instance_id: id, phone })
       if (action === 'connect' && r?.qr_base64) {
         setInstances(prev => prev.map(i => i.id === id ? { ...i, qr_base64: r.qr_base64, pairing_code: r.pairing_code, status: 'connecting' } : i))
       } else await load()
@@ -93,7 +96,7 @@ export default function WhatsappPage() {
       {onboarding && (
         <div className="card-lux p-5 border-brand-300 bg-brand-50/60">
           <p className="font-semibold text-brand-800">Quase lá! Último passo:</p>
-          <p className="text-sm text-ink-soft mt-1">Crie a conexão abaixo e escaneie o QR Code com o WhatsApp <b>do número que vai atender os clientes</b> (Aparelhos conectados → Conectar aparelho).</p>
+          <p className="text-sm text-ink-soft mt-1">Crie a conexão abaixo e conecte o WhatsApp <b>do número que vai atender os clientes</b> — pelo QR Code ou, se estiver no próprio celular, pela aba “Código por número”.</p>
         </div>
       )}
 
@@ -139,13 +142,51 @@ export default function WhatsappPage() {
 
             {expanded === inst.id && inst.status !== 'connected' && (
               <div className="mt-4 rounded-2xl bg-canvas border border-line p-5 flex flex-col items-center gap-3">
-                {inst.qr_base64 ? (
-                  <img src={inst.qr_base64} className="h-56 w-56 rounded-xl border-4 border-white shadow-card" alt="QR Code WhatsApp" />
+                <div className="flex rounded-full bg-ink/5 p-1 text-xs font-medium">
+                  <button onClick={() => setPairMode(false)}
+                    className={clsx('px-4 py-1.5 rounded-full transition', !pairMode ? 'bg-white shadow-soft text-ink' : 'text-ink-muted')}>
+                    <QrCode className="h-3.5 w-3.5 inline mr-1" />QR Code
+                  </button>
+                  <button onClick={() => setPairMode(true)}
+                    className={clsx('px-4 py-1.5 rounded-full transition', pairMode ? 'bg-white shadow-soft text-ink' : 'text-ink-muted')}>
+                    <Smartphone className="h-3.5 w-3.5 inline mr-1" />Código por número
+                  </button>
+                </div>
+
+                {!pairMode ? (
+                  <>
+                    {inst.qr_base64 ? (
+                      <img src={inst.qr_base64} className="h-56 w-56 rounded-xl border-4 border-white shadow-card" alt="QR Code WhatsApp" />
+                    ) : (
+                      <div className="h-56 w-56 grid place-items-center text-ink-muted text-sm"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                    )}
+                    <p className="text-xs text-ink-muted text-center max-w-xs">Abra o WhatsApp → ⋮ → Aparelhos conectados → Conectar aparelho → aponte para o QR. Ele atualiza sozinho quando conectar.</p>
+                  </>
                 ) : (
-                  <div className="h-56 w-56 grid place-items-center text-ink-muted text-sm"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                  <div className="w-full max-w-xs space-y-3">
+                    {inst.pairing_code ? (
+                      <div className="text-center space-y-2">
+                        <p className="text-xs text-ink-muted">Digite este código no WhatsApp:</p>
+                        <p className="font-display text-3xl font-bold tracking-[0.2em] text-ink">{inst.pairing_code}</p>
+                        <button className="btn-outline !py-1.5 text-xs" disabled={busy === inst.id + 'connect'} onClick={() => act('connect', inst.id, pairPhone)}>
+                          {busy === inst.id + 'connect' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Gerar novo código
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <label className="label">Número do WhatsApp que vai atender</label>
+                        <input className="input" inputMode="numeric" maxLength={15} placeholder="(22) 99999-9999"
+                          value={pairPhone} onChange={e => setPairPhone(maskPhoneBR(e.target.value))} />
+                        <button className="btn-primary w-full !py-2 text-sm" disabled={onlyDigits(pairPhone).length < 10 || busy === inst.id + 'connect'}
+                          onClick={() => act('connect', inst.id, pairPhone)}>
+                          {busy === inst.id + 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
+                          Gerar código de pareamento
+                        </button>
+                      </>
+                    )}
+                    <p className="text-xs text-ink-muted text-center">WhatsApp → ⋮ → Aparelhos conectados → Conectar aparelho → <b>“Conectar com número de telefone”</b> → digita o código. Ideal quando você tá no próprio celular e não dá pra escanear o QR.</p>
+                  </div>
                 )}
-                {inst.pairing_code && <p className="text-sm">Código de pareamento: <code className="font-bold">{inst.pairing_code}</code></p>}
-                <p className="text-xs text-ink-muted text-center max-w-xs">Abra o WhatsApp → ⋮ → Aparelhos conectados → Conectar aparelho → aponte para o QR. Ele atualiza sozinho quando conectar.</p>
               </div>
             )}
             {expanded !== inst.id && inst.status !== 'connected' && inst.qr_base64 && (

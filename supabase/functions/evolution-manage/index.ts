@@ -48,7 +48,8 @@ Deno.serve(async (req) => {
     const inst = await getInstance(db, companyId, body)
 
     if (action === 'connect') {
-      const conn = await connectInstance(inst.instance_name)
+      const phone = typeof body.phone === 'string' ? body.phone : undefined
+      const conn = await connectInstance(inst.instance_name, phone)
       const qr = conn?.base64 ?? conn?.qrcode?.base64 ?? conn?.code ?? inst.qr_base64
       const pairing = conn?.pairingCode ?? null
       await db.from('instances').update({ qr_base64: qr, pairing_code: pairing, status: 'connecting' }).eq('id', inst.id)
