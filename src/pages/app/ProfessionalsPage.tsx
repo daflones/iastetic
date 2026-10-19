@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useDraft } from '@/hooks/useDraft'
 import { NICHES } from '@/lib/niches'
+import { onlyDigits } from '@/lib/validators'
 import type { Professional } from '@/lib/types'
 import clsx from 'clsx'
 
@@ -95,7 +96,7 @@ function OwnerCard({ company, onSaved }: { company: any; onSaved?: () => Promise
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <input type="password" className="input !w-48" value={pin} onChange={e => setPin(e.target.value)}
+          <input type="password" className="input !w-48" value={pin} onChange={e => setPin(onlyDigits(e.target.value, 8))}
             placeholder={hasPin ? 'Nova senha' : 'Crie sua senha'} autoComplete="new-password"
             onKeyDown={e => e.key === 'Enter' && savePin()} />
           <button className="btn-primary !py-2 text-xs" onClick={savePin} disabled={busy || !pin.trim()}>
@@ -186,7 +187,7 @@ function ProfModal({ prof, companyId, onClose }: { prof: Partial<Professional>; 
                 <button type="button" className="text-xs text-brand-600 underline" onClick={() => setResetPin(true)}>definir nova senha</button>
               </div>
             ) : (
-              <input type="password" className="input" value={pin} onChange={e => setPin(e.target.value)}
+              <input type="password" className="input" value={pin} onChange={e => setPin(onlyDigits(e.target.value, 8))}
                 placeholder={hasPin ? 'Nova senha (substitui a atual)' : 'Senha (opcional, ex.: 4-6 dígitos)'} autoComplete="new-password" />
             )}
           </div>

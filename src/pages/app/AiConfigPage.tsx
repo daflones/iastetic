@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDraft, draftHas, draftClear } from '@/hooks/useDraft'
 import { NICHES } from '@/lib/niches'
 import NicheArt from '@/components/ui/NicheArt'
+import { maskPhoneBR } from '@/lib/validators'
 import clsx from 'clsx'
 
 const DAYS = [{ k: 'sun', l: 'Domingo' }, { k: 'mon', l: 'Segunda' }, { k: 'tue', l: 'Terça' }, { k: 'wed', l: 'Quarta' }, { k: 'thu', l: 'Quinta' }, { k: 'fri', l: 'Sexta' }, { k: 'sat', l: 'Sábado' }]
@@ -131,7 +132,7 @@ export default function AiConfigPage() {
         {ai.handoff_to_attendant && (
           <div>
             <label className="label">WhatsApp do atendente</label>
-            <input className="input" value={ai.handoff_phone ?? ''} onChange={e => setAi({ ...ai, handoff_phone: e.target.value })}
+            <input className="input" value={ai.handoff_phone ?? ''} inputMode="numeric" maxLength={15} onChange={e => setAi({ ...ai, handoff_phone: maskPhoneBR(e.target.value) })}
               placeholder="(11) 99999-9999 — recebe o alerta com os dados da cliente" />
             <p className="text-[11px] text-ink-muted mt-1">O alerta sai do mesmo número conectado do seu estabelecimento.</p>
           </div>
@@ -142,7 +143,7 @@ export default function AiConfigPage() {
         <h3 className="font-semibold">Estabelecimento</h3>
         <div className="grid sm:grid-cols-2 gap-4">
           <div><label className="label">Nome</label><input className="input" value={companyForm.name ?? ''} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
-          <div><label className="label">WhatsApp público</label><input className="input" value={companyForm.whatsapp_public ?? ''} onChange={e => setCompanyForm({ ...companyForm, whatsapp_public: e.target.value })} /></div>
+          <div><label className="label">WhatsApp público</label><input className="input" value={companyForm.whatsapp_public ?? ''} inputMode="numeric" maxLength={15} onChange={e => setCompanyForm({ ...companyForm, whatsapp_public: maskPhoneBR(e.target.value) })} /></div>
           <div className="sm:col-span-2"><label className="label">Endereço</label><input className="input" value={companyForm.address ?? ''} onChange={e => setCompanyForm({ ...companyForm, address: e.target.value })} /></div>
           <div><label className="label">Cidade</label><input className="input" value={companyForm.city ?? ''} onChange={e => setCompanyForm({ ...companyForm, city: e.target.value })} /></div>
           <div><label className="label">UF</label><input className="input" maxLength={2} value={companyForm.state ?? ''} onChange={e => setCompanyForm({ ...companyForm, state: e.target.value.toUpperCase() })} /></div>

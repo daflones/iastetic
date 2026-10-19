@@ -5,6 +5,7 @@ import { Loader2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { NICHE_LIST } from '@/lib/niches'
 import Art from '@/components/ui/Art'
+import PasswordInput from '@/components/ui/PasswordInput'
 import clsx from 'clsx'
 
 export default function LoginPage() {
@@ -32,7 +33,7 @@ export default function LoginPage() {
         </div>
         <div>
           <label className="label">Senha</label>
-          <input className="input" type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+          <PasswordInput className="input" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
         </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button className="btn-primary w-full" disabled={busy}>

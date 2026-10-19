@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDraft } from '@/hooks/useDraft'
 import { STAGES, stageInfo } from './ContactsPage'
 import type { Conversation, Message } from '@/lib/types'
+import { onlyDigits } from '@/lib/validators'
 import clsx from 'clsx'
 
 export default function ChatPage() {
@@ -418,7 +419,7 @@ function OperatorPicker({ profs, ownerHasPin, onPick, onClose }: {
         {needsPin && (
           <div className="mt-3">
             <label className="label flex items-center gap-1"><Lock className="h-3 w-3" /> Senha de {selected?.name}</label>
-            <input type="password" className="input" value={pin} onChange={e => setPin(e.target.value)}
+            <input type="password" className="input" value={pin} onChange={e => setPin(onlyDigits(e.target.value, 8))}
               onKeyDown={e => e.key === 'Enter' && go()} autoFocus placeholder="Digite a senha" />
           </div>
         )}

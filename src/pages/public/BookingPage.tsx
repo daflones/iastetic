@@ -10,6 +10,7 @@ import { supabase, callFn, brl } from '@/lib/supabase'
 import { applyNicheTheme, NICHES, isNiche } from '@/lib/niches'
 import NicheArt from '@/components/ui/NicheArt'
 import { QRCodeSVG } from 'qrcode.react'
+import { maskPhoneBR } from '@/lib/validators'
 import clsx from 'clsx'
 
 const AMENITIES: [string, string, typeof Wifi][] = [
@@ -349,7 +350,7 @@ export default function BookingPage() {
                     {prof && ` • ${prof}`}
                   </div>
                   <div><label className="label">Seu nome *</label><input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Como te chamamos?" /></div>
-                  <div><label className="label">WhatsApp *</label><input className="input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="(21) 99999-0000" /></div>
+                  <div><label className="label">WhatsApp *</label><input className="input" value={form.phone} inputMode="numeric" maxLength={15} onChange={e => setForm({ ...form, phone: maskPhoneBR(e.target.value) })} placeholder="(21) 99999-0000" /></div>
                   <div><label className="label">Observação (opcional)</label><textarea className="input min-h-[60px]" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Alergias, preferências…" /></div>
                   {error && <p className="text-xs text-red-500">{error}</p>}
                   <button className="btn-primary w-full" onClick={confirm} disabled={busy || !form.name.trim() || form.phone.replace(/\D/g, '').length < 10}>

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { NICHES, NICHE_LIST, applyNicheTheme, type NicheId } from '@/lib/niches'
 import Art from '@/components/ui/Art'
+import { maskPhoneBR } from '@/lib/validators'
 import clsx from 'clsx'
 
 const DAYS = [
@@ -151,7 +152,7 @@ export default function OnboardingPage() {
                 <div className="sm:col-span-2"><label className="label">Nome do estabelecimento *</label>
                   <input className="input" value={company.name} onChange={e => setCompany({ ...company, name: e.target.value })} placeholder={`Ex.: Studio ${n?.short ?? 'Beleza'}`} /></div>
                 <div><label className="label">WhatsApp público</label>
-                  <input className="input" value={company.whatsapp_public} onChange={e => setCompany({ ...company, whatsapp_public: e.target.value })} placeholder="(11) 99999-9999" /></div>
+                  <input className="input" value={company.whatsapp_public} inputMode="numeric" maxLength={15} onChange={e => setCompany({ ...company, whatsapp_public: maskPhoneBR(e.target.value) })} placeholder="(11) 99999-9999" /></div>
                 <div><label className="label">Instagram</label>
                   <input className="input" value={company.instagram} onChange={e => setCompany({ ...company, instagram: e.target.value })} placeholder="@seu.studio" /></div>
                 <div className="sm:col-span-2"><label className="label">Endereço</label>
