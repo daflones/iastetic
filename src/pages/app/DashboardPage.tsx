@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   CalendarCheck, MessageCircle, Users, Bot, ArrowRight, Wallet,
-  TrendingUp, TrendingDown, Sparkles, ArrowUpRight, Wifi, WifiOff, Crown,
+  TrendingUp, TrendingDown, Sparkles, ArrowUpRight, Wifi, WifiOff, Crown, LifeBuoy,
 } from 'lucide-react'
 import { supabase, brl, callFn } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [quota, setQuota] = useState<any>(null)
   const [inst, setInst] = useState<any>(null)
+  const [supportWaiting, setSupportWaiting] = useState(0)
 
   useEffect(() => {
     if (!company) return
@@ -60,6 +61,8 @@ export default function DashboardPage() {
     callFn<any>('payments', { action: 'quota_status' }).then(r => setQuota(r)).catch(() => {})
     supabase.from('instances').select('instance_name,label,phone,status,ai_enabled,last_seen_at').eq('company_id', company.id)
       .order('created_at').limit(1).maybeSingle().then(({ data }) => setInst(data))
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('company_id', company.id).eq('status', 'aguardando_empresa')
+      .then(({ count }) => setSupportWaiting(count ?? 0))
   }, [company?.id])
 
   const niche = company ? NICHES[company.niche] : null
@@ -123,6 +126,18 @@ export default function DashboardPage() {
             <p className="text-xs text-red-500">{handoffs.map((h: any) => h.contacts?.name ?? h.contacts?.push_name ?? h.contacts?.phone).slice(0, 3).join(', ')}{handoffs.length > 3 ? ` +${handoffs.length - 3}` : ''}</p>
           </div>
           <Link to="/app/chat" className="btn-primary !py-2 text-xs">Assumir no chat <ArrowRight className="h-3.5 w-3.5" /></Link>
+        </motion.div>
+      )}
+
+      {/* suporte respondeu */}
+      {supportWaiting > 0 && (
+        <motion.div {...fadeUp} className="card-lux p-4 flex items-center gap-3">
+          <span className="h-9 w-9 rounded-xl bg-violet-100 grid place-items-center text-violet-600 shrink-0"><LifeBuoy className="h-4 w-4" /></span>
+          <div className="flex-1 min-w-[200px]">
+            <p className="font-semibold text-sm">O suporte respondeu seu chamado</p>
+            <p className="text-xs text-ink-muted">{supportWaiting > 1 ? `${supportWaiting} chamados aguardando você` : 'Tem uma resposta nova te esperando'}</p>
+          </div>
+          <Link to="/app/suporte" className="btn-ghost text-xs">Ver resposta <ArrowRight className="h-3.5 w-3.5" /></Link>
         </motion.div>
       )}
 

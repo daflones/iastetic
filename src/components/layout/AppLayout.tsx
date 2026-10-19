@@ -13,7 +13,7 @@ import Art from '@/components/ui/Art'
 import NicheArt from '@/components/ui/NicheArt'
 import clsx from 'clsx'
 
-type Item = { to: string; label: string; icon: any; live?: boolean; feat?: string }
+type Item = { to: string; label: string; icon: any; live?: boolean; feat?: string; dot?: boolean }
 type Section = { title: string; items: Item[] }
 
 const SECTIONS: Section[] = [
@@ -55,7 +55,7 @@ const SECTIONS: Section[] = [
       { to: '/app/assistente', label: 'Assistente IA', icon: BrainCircuit, feat: 'assistant' },
       { to: '/app/carteira', label: 'Carteira', icon: Wallet },
       { to: '/app/planos', label: 'Meu Plano', icon: Crown },
-      { to: '/app/suporte', label: 'Suporte', icon: LifeBuoy },
+      { to: '/app/suporte', label: 'Suporte', icon: LifeBuoy, dot: true },
     ],
   },
 ]
@@ -64,6 +64,7 @@ export default function AppLayout() {
   const { company, plan, features, isAdmin, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const [unread, setUnread] = useState(0)
+  const [supportUnread, setSupportUnread] = useState(0)
   const nav = useNavigate()
   const loc = useLocation()
   const niche = company ? NICHES[company.niche] : null
@@ -78,6 +79,19 @@ export default function AppLayout() {
           const { data } = await supabase.from('conversations').select('unread_count').eq('company_id', company.id).eq('status', 'open')
           setUnread((data ?? []).reduce((a, c) => a + (c.unread_count ?? 0), 0))
         })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [company?.id])
+
+  // bolinha no Suporte quando o admin responde (status aguardando_empresa)
+  useEffect(() => {
+    if (!company) return
+    const load = () => supabase.from('support_tickets').select('id', { count: 'exact', head: true })
+      .eq('company_id', company.id).eq('status', 'aguardando_empresa')
+      .then(({ count }) => setSupportUnread(count ?? 0))
+    load()
+    const ch = supabase.channel('support-unread')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets', filter: `company_id=eq.${company.id}` }, load)
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [company?.id])
@@ -136,6 +150,7 @@ export default function AppLayout() {
                           <span className="flex-1 truncate">{m.label}</span>
                           {locked && <Lock className={clsx('h-3 w-3', isActive ? 'text-white/70' : 'text-ink-muted/60')} />}
                           {m.live && unread > 0 && <span className="badge bg-red-500 text-white !px-1.5">{unread}</span>}
+                          {m.dot && supportUnread > 0 && <span className={clsx('h-2 w-2 rounded-full shrink-0', isActive ? 'bg-white' : 'bg-violet-500')} />}
                           {isActive && <motion.span layoutId="nav-glow" className="absolute inset-y-1.5 -left-3.5 w-1 rounded-r-full bg-brand-500 shadow-[0_0_12px_rgb(var(--brand-500)/0.9)]" />}
                         </>
                       )}
