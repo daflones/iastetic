@@ -438,7 +438,7 @@ async function execAssistantTool(name: string, args: any, db: any, companyId: st
         preco: c.plans?.price_cents != null ? `R$ ${(c.plans.price_cents / 100).toFixed(2)}/mês` : null,
         status: c.subscription_status,
         renovacao_ou_fim: until ? `${fmtWhen(until, tz)} (${days} dia(s))` : 'sem data',
-        recursos: c.plans?.features ?? 'trial libera tudo por 7 dias',
+        recursos: c.plans?.features ?? 'trial libera os recursos por 7 dias com cotas reduzidas (ver uso_do_plano)',
         uso_do_plano: quotas,
         recarga: 'Se algo estourar, o dono recarrega em "Meu Plano": cada recarga custa 30% do valor do plano e adiciona +25% da quota do recurso escolhido (Pix ou cartão).',
       })

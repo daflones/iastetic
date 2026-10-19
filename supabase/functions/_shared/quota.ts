@@ -8,6 +8,11 @@ export const QUOTA_RESOURCES: Record<string, { planCol: string; usageKind: strin
   images:          { planCol: 'image_quota',            usageKind: 'image_gen',      label: 'imagens geradas por IA',         def: 4 },
 }
 
+// Trial (7 dias): cotas reduzidas fixas — dá pra testar tudo, sem abuso.
+const TRIAL_LIMITS: Record<string, number> = {
+  messages: 150, assistant_audio: 5, customer_audio: 10, images: 2,
+}
+
 function monthStart() {
   const d = new Date()
   d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0)
@@ -16,7 +21,8 @@ function monthStart() {
 
 async function planLimit(db: any, companyId: string, resource: string): Promise<number> {
   const r = QUOTA_RESOURCES[resource]
-  const { data: c } = await db.from('companies').select(`plan_id, plans(${r.planCol})`).eq('id', companyId).single()
+  const { data: c } = await db.from('companies').select(`plan_id, subscription_status, plans(${r.planCol})`).eq('id', companyId).single()
+  if (c?.subscription_status === 'trial') return TRIAL_LIMITS[resource] ?? r.def
   return c?.plans?.[r.planCol] ?? r.def
 }
 
