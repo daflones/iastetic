@@ -36,9 +36,12 @@ export default function LandingPage() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [yearly, setYearly] = useState(false)
   const [spotlight, setSpotlight] = useState(false)
+  const [demoOpen, setDemoOpen] = useState(false)
   const n = NICHES[niche]
 
   function highlightDemo() {
+    // no celular o chat abre como app (modal) — não tem espaço no hero
+    if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) { setDemoOpen(true); return }
     setSpotlight(true)
     document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setTimeout(() => setSpotlight(false), 1900)
@@ -75,6 +78,23 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
+
+      {/* chat da demo como "app" no celular */}
+      <AnimatePresence>
+        {demoOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 lg:hidden flex items-end sm:items-center justify-center">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setDemoOpen(false)} />
+            <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+              className="relative w-full sm:w-[400px] h-[92dvh] sm:h-[84dvh] sm:max-h-[740px]">
+              <button onClick={() => setDemoOpen(false)} aria-label="Fechar"
+                className="absolute -top-1 right-3 z-10 h-9 w-9 rounded-full bg-white/15 backdrop-blur text-white grid place-items-center text-lg leading-none hover:bg-white/25">×</button>
+              <LiveDemo niche={niche} onNicheChange={setNiche} fill />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* spotlight: escurece a tela e recorta o chat da demo */}
       <AnimatePresence>
@@ -113,11 +133,44 @@ export default function LandingPage() {
           </motion.div>
         </div>
 
-        {/* Demo ao vivo */}
+        {/* Demo ao vivo — inline só no desktop */}
         <motion.div id="demo" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .6, delay: .15 }}
-          className={clsx('relative rounded-3xl transition-all duration-500', spotlight && 'z-50 ring-4 ring-brand-400/70 shadow-glow scale-[1.02]')}>
+          className={clsx('relative rounded-3xl transition-all duration-500 hidden lg:block', spotlight && 'z-50 ring-4 ring-brand-400/70 shadow-glow scale-[1.02]')}>
           <Art name="hero-landing" className="pointer-events-none absolute -top-16 -right-10 w-64 lg:w-80 opacity-90 blur-[1px] -z-10 rotate-3 animate-float hidden md:block" />
           <LiveDemo niche={niche} onNicheChange={setNiche} />
+        </motion.div>
+
+        {/* Mobile: mini "celular" — toque abre o chat em modal */}
+        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .6, delay: .15 }}
+          className="lg:hidden flex justify-center">
+          <button onClick={() => setDemoOpen(true)} className="group relative w-[min(300px,82vw)] rounded-[2.2rem] border-[6px] border-ink/90 bg-canvas shadow-glow overflow-hidden text-left active:scale-[0.98] transition-transform">
+            {/* notch */}
+            <div className="absolute top-1.5 left-1/2 -translate-x-1/2 h-4 w-20 rounded-full bg-ink/90 z-10" />
+            {/* mini header */}
+            <div className="bg-gradient-to-r from-brand-600 to-accent-700 text-white px-4 pt-6 pb-2.5 flex items-center gap-2.5">
+              <NicheArt id={niche} className="h-8 w-8 rounded-full ring-1 ring-white/30" />
+              <div className="flex-1 leading-tight">
+                <p className="font-semibold text-[13px]">Recepção {n.short} (demo)</p>
+                <p className="text-[10px] text-white/75 flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300 inline-block" /> online agora</p>
+              </div>
+            </div>
+            {/* bolhas fake */}
+            <div className="px-3.5 py-3 space-y-2 bg-canvas/60">
+              <div className="max-w-[85%] bg-surface border border-line rounded-2xl rounded-bl-sm px-3 py-2 text-[12px] leading-snug">
+                Oi! Sou a recepção — pergunta preço, horário ou manda "quero agendar" 💜
+              </div>
+              <div className="max-w-[60%] ml-auto bg-brand-500 text-white rounded-2xl rounded-br-sm px-3 py-2 text-[12px]">quanto custa?</div>
+              <div className="bg-surface border border-line rounded-2xl rounded-bl-sm px-3 py-2 w-14 flex gap-1">
+                {[0, 1, 2].map(i => <span key={i} className="h-1.5 w-1.5 rounded-full bg-brand-300 animate-typing" style={{ animationDelay: `${i * 0.15}s` }} />)}
+              </div>
+            </div>
+            {/* CTA */}
+            <div className="px-4 pb-4 pt-1 bg-canvas/60">
+              <span className="flex items-center justify-center gap-2 rounded-full bg-brand-500 text-white text-[12px] font-semibold py-2.5 group-active:bg-brand-600">
+                <Bot className="h-3.5 w-3.5" /> Tocar para conversar com a IA
+              </span>
+            </div>
+          </button>
         </motion.div>
       </section>
 
@@ -313,7 +366,7 @@ export default function LandingPage() {
 }
 
 // ===================== Demo ao vivo =====================
-function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n: NicheId) => void }) {
+function LiveDemo({ niche, onNicheChange, fill }: { niche: NicheId; onNicheChange: (n: NicheId) => void; fill?: boolean }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [msgs, setMsgs] = useState<{ role: 'user' | 'ai'; text: string; audio?: string }[]>([])
   const [input, setInput] = useState('')
@@ -354,7 +407,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
   }
 
   return (
-    <div className="card-lux overflow-hidden shadow-glow ring-1 ring-brand-200/60 flex flex-col h-[76dvh] max-h-[640px] sm:h-auto sm:max-h-none">
+    <div className={clsx('card-lux overflow-hidden shadow-glow ring-1 ring-brand-200/60 flex flex-col', fill ? 'h-full !rounded-t-3xl sm:!rounded-3xl' : 'h-[76dvh] max-h-[640px] sm:h-auto sm:max-h-none')}>
       {/* phone header */}
       <div className="bg-gradient-to-r from-brand-600 to-accent-700 text-white px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 sm:gap-3 shrink-0">
         <NicheArt id={niche} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full ring-1 ring-white/30" />
