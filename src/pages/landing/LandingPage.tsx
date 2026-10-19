@@ -24,6 +24,7 @@ const FEATURES = [
 
 const FAQS = [
   { q: 'Preciso trocar de número de WhatsApp?', a: 'Não. Você conecta seu WhatsApp escaneando um QR Code — como o WhatsApp Web. Suas conversas continuam no seu aparelho.' },
+  { q: 'É difícil configurar meus serviços e regras?', a: 'Não — você pode simplesmente conversar com a assistente de configuração: ela pergunta sobre seu negócio e preenche serviços, equipe, horários e regras sozinha. Prefere fazer manual? Também dá, em poucos minutos.' },
   { q: 'A IA erra horários ou inventa informação?', a: 'A IA só oferece horários lidos da sua agenda real e só fala preços cadastrados. O que ela pode ou não pode dizer fica nas suas regras.' },
   { q: 'Posso assumir uma conversa?', a: 'Sim. No painel você vê cada conversa ao vivo e assume o atendimento quando quiser — a IA pausa naquela conversa.' },
   { q: 'Como recebo os pagamentos?', a: 'Cobranças Pix e cartão caem na sua carteira dentro da plataforma. Saque via Pix a qualquer momento (taxa de 5%) ou use o saldo para pagar a mensalidade.' },
@@ -81,7 +82,7 @@ export default function LandingPage() {
             </h1>
             <p className="mt-5 text-lg text-ink-soft max-w-xl">
               A IAstetic atende suas clientes no WhatsApp, agenda, remarca, cobra no Pix e faz follow-up —
-              enquanto você cuida do que ama. Feita para salões, manicures e estúdios de olhar.
+              enquanto você cuida do que ama. Feita para salões, manicures, olhar, barbearias e clínicas de estética.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/cadastro" className="btn-primary text-base px-6 py-3">Teste grátis por 7 dias</Link>
@@ -89,6 +90,7 @@ export default function LandingPage() {
             </div>
             <div className="mt-6 flex items-center gap-5 text-sm text-ink-muted">
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-brand-500" /> Sem cartão</span>
+              <span className="flex items-center gap-1.5"><Sparkles className="h-4 w-4 text-brand-500" /> A IA configura pra você</span>
               <span className="flex items-center gap-1.5"><QrCode className="h-4 w-4 text-brand-500" /> QR Code em 2 min</span>
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-brand-500" /> Cancele quando quiser</span>
             </div>
@@ -133,7 +135,7 @@ export default function LandingPage() {
         <div className="mt-12 grid sm:grid-cols-3 gap-6">
           {[
             { img: 'passo-1', step: '01', title: 'Conecta o WhatsApp', text: 'Escaneia um QR Code como o WhatsApp Web. Suas conversas continuam no seu aparelho.' },
-            { img: 'passo-2', step: '02', title: 'A IA aprende seu negócio', text: 'Ela lê seus serviços, preços, equipe e regras — e só fala o que você autoriza.' },
+            { img: 'passo-2', step: '02', title: 'A IA aprende seu negócio', text: 'Prefere não preencher nada? Uma assistente conversa com você e configura serviços, equipe, horários e regras sozinha. Ou cadastre manualmente em 3 min.' },
             { img: 'passo-3', step: '03', title: 'Agenda e cobra sozinha', text: 'Marca horários reais, manda Pix, confirma e faz follow-up — 24h por dia.' },
           ].map((s, i) => (
             <motion.div key={s.step}
