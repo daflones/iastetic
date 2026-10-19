@@ -562,6 +562,24 @@ async function runProspectScan(db: any, opts: { niche: string; city: string; uf:
     const q = [opts.city, opts.uf, 'Brasil'].filter(Boolean).join(', ')
     place = await geocode(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`)
   }
+  if (!place) {
+    // Nominatim bloqueia IP de cloud às vezes — Photon cobre geocode de cidade
+    try {
+      const q = encodeURIComponent([opts.city, opts.uf, 'Brasil'].filter(Boolean).join(', '))
+      const r = await fetch(`https://photon.komoot.io/api/?q=${q}&limit=8`, { signal: AbortSignal.timeout(20_000) })
+      if (r.ok) {
+        const feats = (await r.json().catch(() => ({})))?.features ?? []
+        const UF_STATE: Record<string, string> = { AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins' }
+        const ufName = UF_STATE[(opts.uf || '').toUpperCase()]?.toLowerCase()
+        const br = feats.filter((f: any) => /brasil|brazil/i.test(f.properties?.country ?? ''))
+        const isPlace = (f: any) => ['city', 'district', 'borough', 'county', 'hamlet', 'locality'].includes(f.properties?.type ?? '') || ['city', 'town', 'municipality', 'village'].includes(f.properties?.osm_value ?? '')
+        const match = br.find((f: any) => isPlace(f) && (!ufName || (f.properties?.state ?? '').toLowerCase() === ufName)) ?? br.find(isPlace) ?? br[0]
+        if (match?.geometry?.coordinates) {
+          place = { lat: String(match.geometry.coordinates[1]), lon: String(match.geometry.coordinates[0]) }
+        }
+      }
+    } catch { /* segue pro erro */ }
+  }
   if (!place) throw new ApiError(404, 'CITY_NOT_FOUND', `Cidade "${opts.city}" não encontrada. Confira o nome/UF.`)
   const lat = Number(place.lat), lon = Number(place.lon)
 
@@ -626,7 +644,7 @@ out tags center 300;`
     }
     for (const term of TERMS[opts.niche] ?? TERMS.todos) {
       try {
-        const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&limit=50&lat=${lat}&lon=${lon}&lang=pt`,
+        const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&limit=50&lat=${lat}&lon=${lon}`,
           { headers: nomHeaders, signal: AbortSignal.timeout(15_000) })
         if (!r.ok) continue
         for (const f of (await r.json())?.features ?? []) {
