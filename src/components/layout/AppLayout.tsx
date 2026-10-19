@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, MessageCircle, CalendarDays, Users, Sparkles, UserSquare,
-  Bot, QrCode, Bell, Wallet, Crown, BrainCircuit, FolderOpen, LogOut, Menu, ShieldCheck, Lock, Link2, Megaphone,
+  Bot, QrCode, Bell, Wallet, Crown, BrainCircuit, FolderOpen, LogOut, Menu, ShieldCheck, Lock, Link2, Megaphone, LifeBuoy,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { AssistantProvider } from '@/hooks/useAssistant'
@@ -55,6 +55,7 @@ const SECTIONS: Section[] = [
       { to: '/app/assistente', label: 'Assistente IA', icon: BrainCircuit, feat: 'assistant' },
       { to: '/app/carteira', label: 'Carteira', icon: Wallet },
       { to: '/app/planos', label: 'Meu Plano', icon: Crown },
+      { to: '/app/suporte', label: 'Suporte', icon: LifeBuoy },
     ],
   },
 ]

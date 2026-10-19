@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, QrCode, MessageSquareText, Send, Users, Sparkle,
   CalendarDays, Wallet, ChevronRight, Power, BrainCircuit, KeyRound, Crown, Plus, Pencil,
   LayoutDashboard, TrendingUp, TrendingDown, Menu, Activity, Mic, Square, Bot, Image, Volume2,
-  Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2,
+  Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2, LifeBuoy,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -21,7 +21,7 @@ import { useRecorder } from '@/hooks/useRecorder'
 import { QRCodeSVG } from 'qrcode.react'
 import clsx from 'clsx'
 
-type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'prospect' | 'whatsapp' | 'assistant' | 'integrations' | 'settings'
+type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'support' | 'prospect' | 'whatsapp' | 'assistant' | 'integrations' | 'settings'
 
 const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] = [
   {
@@ -38,6 +38,7 @@ const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] =
     items: [
       { id: 'prospect', label: 'Prospecção', icon: Target },
       { id: 'whatsapp', label: 'WhatsApp do admin', icon: QrCode },
+      { id: 'support', label: 'Suporte', icon: LifeBuoy },
       { id: 'assistant', label: 'Assistente', icon: BrainCircuit },
       { id: 'integrations', label: 'Integrações', icon: KeyRound },
       { id: 'settings', label: 'Taxas', icon: CreditCard },
@@ -430,6 +431,7 @@ export default function AdminPage() {
 
           {tab === 'plans' && <PlansCard />}
           {tab === 'prospect' && <ProspectCard />}
+          {tab === 'support' && <SupportCard />}
           {tab === 'whatsapp' && <AdminWhatsappCard />}
           {tab === 'assistant' && <AdminAssistantCard />}
           {tab === 'integrations' && <SecretsCard />}
@@ -1371,6 +1373,124 @@ function ProspectCard() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ================= SUPORTE =================
+const TICKET_STATUS: Record<string, [string, string]> = {
+  aberto: ['Aberto', 'bg-amber-100 text-amber-700'],
+  em_atendimento: ['Em atendimento', 'bg-blue-100 text-blue-700'],
+  aguardando_empresa: ['Aguardando empresa', 'bg-violet-100 text-violet-700'],
+  resolvido: ['Resolvido', 'bg-emerald-100 text-emerald-700'],
+}
+const TICKET_CATS: Record<string, string> = { duvida: 'Dúvida', bug: 'Algo quebrou', whatsapp: 'WhatsApp/IA', financeiro: 'Financeiro', sugestao: 'Sugestão' }
+
+function SupportCard() {
+  const [tickets, setTickets] = useState<any[]>([])
+  const [openCount, setOpenCount] = useState(0)
+  const [filter, setFilter] = useState('')
+  const [detail, setDetail] = useState<any>(null)
+  const [reply, setReply] = useState('')
+  const [busy, setBusy] = useState('')
+
+  async function load() {
+    const d = await callFn<any>('admin', { action: 'support_list', status: filter || undefined }).catch(() => null)
+    setTickets(d?.tickets ?? []); setOpenCount(d?.open ?? 0)
+  }
+  useEffect(() => { load() }, [filter])
+
+  async function openTicket(id: string) {
+    const d = await callFn<any>('admin', { action: 'support_get', id }).catch(() => null)
+    setDetail(d); load()
+  }
+
+  async function sendReply() {
+    if (!reply.trim() || !detail) return
+    setBusy('reply')
+    await callFn('admin', { action: 'support_reply', ticket_id: detail.ticket.id, message: reply }).catch(() => {})
+    setReply(''); setBusy('')
+    openTicket(detail.ticket.id)
+  }
+
+  async function setStatus(id: string, status: string) {
+    await callFn('admin', { action: 'support_status', id, status }).catch(() => {})
+    if (detail?.ticket?.id === id) setDetail({ ...detail, ticket: { ...detail.ticket, status } })
+    load()
+  }
+
+  const st = (s: string) => TICKET_STATUS[s] ?? TICKET_STATUS.aberto
+
+  return (
+    <div className="grid lg:grid-cols-5 gap-5">
+      <div className="lg:col-span-2 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-semibold flex items-center gap-2"><LifeBuoy className="h-4 w-4 text-brand-500" /> Chamados
+            {openCount > 0 && <span className="badge bg-amber-100 text-amber-700 text-[10px]">{openCount} abertos</span>}</h3>
+          <select className="input !w-36 !py-1.5 text-xs" value={filter} onChange={e => setFilter(e.target.value)}>
+            <option value="">Todos</option>
+            {Object.entries(TICKET_STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        <div className="space-y-2 max-h-[65vh] overflow-y-auto">
+          {tickets.map(t => (
+            <button key={t.id} onClick={() => openTicket(t.id)}
+              className={clsx('card-lux p-3.5 w-full text-left transition', detail?.ticket?.id === t.id && 'ring-2 ring-brand-400')}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold text-sm truncate">{t.subject}</p>
+                <span className={clsx('badge text-[9px] shrink-0', st(t.status)[1])}>{st(t.status)[0]}</span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-[10px] text-ink-muted">
+                <span>{t.companies?.name} · {TICKET_CATS[t.category] ?? t.category}</span>
+                <span>{new Date(t.updated_at).toLocaleDateString('pt-BR')}</span>
+              </div>
+            </button>
+          ))}
+          {!tickets.length && <p className="card-lux p-8 text-center text-xs text-ink-muted">Nenhum chamado{filter ? ' com esse status' : ''} — tudo em dia.</p>}
+        </div>
+      </div>
+
+      <div className="lg:col-span-3">
+        {detail ? (
+          <div className="card-lux overflow-hidden flex flex-col" style={{ height: '70vh' }}>
+            <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">{detail.ticket.subject}</h3>
+                <p className="text-[11px] text-ink-muted">
+                  {detail.ticket.companies?.name} · {TICKET_CATS[detail.ticket.category]} ·
+                  {detail.ticket.companies?.whatsapp_public ? ` WA ${detail.ticket.companies.whatsapp_public}` : ' sem WhatsApp'}
+                </p>
+              </div>
+              <select className="input !w-40 !py-1.5 text-xs" value={detail.ticket.status}
+                onChange={e => setStatus(detail.ticket.id, e.target.value)}>
+                {Object.entries(TICKET_STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {(detail.messages ?? []).map((m: any) => (
+                <div key={m.id} className={clsx('max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap',
+                  m.sender === 'admin' ? 'ml-auto bg-brand-600 text-white rounded-br-md' : 'bg-ink/5 rounded-bl-md')}>
+                  {m.body}
+                  <div className={clsx('text-[9px] mt-1', m.sender === 'admin' ? 'text-white/60' : 'text-ink-muted')}>
+                    {m.sender === 'admin' ? 'Você · ' : `${detail.ticket.companies?.name} · `}{new Date(m.created_at).toLocaleString('pt-BR')}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-3 border-t border-line flex gap-2">
+              <input className="input flex-1" placeholder="Responder como suporte…" value={reply}
+                onChange={e => setReply(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendReply()} />
+              <button className="btn-primary !px-4" onClick={sendReply} disabled={busy === 'reply' || !reply.trim()}>
+                {busy === 'reply' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="card-lux p-10 text-center text-sm text-ink-muted h-64 grid place-items-center">
+            Selecione um chamado pra ver a conversa e responder.
+          </div>
+        )}
+      </div>
     </div>
   )
 }

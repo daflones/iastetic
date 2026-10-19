@@ -360,6 +360,47 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { queued: jobs.length, interval_sec: intervalSec } })
       }
 
+      // ================= SUPORTE (chamados das empresas) =================
+      case 'support_list': {
+        let q = db.from('support_tickets')
+          .select('*, companies(name,niche,whatsapp_public), support_messages(count)')
+          .order('status').order('updated_at', { ascending: false }).limit(200)
+        if (body.status) q = q.eq('status', str(body.status, 20))
+        const { data } = await q
+        const open = (data ?? []).filter((t: any) => t.status === 'aberto').length
+        return json({ ok: true, data: { tickets: data ?? [], open } })
+      }
+
+      case 'support_get': {
+        const id = str(body.id, 64)
+        const [{ data: t }, { data: msgs }] = await Promise.all([
+          db.from('support_tickets').select('*, companies(name,niche,slug,whatsapp_public,instances(status,phone))').eq('id', id).single(),
+          db.from('support_messages').select('*').eq('ticket_id', id).order('created_at'),
+        ])
+        // marca como em atendimento quando o admin abre um chamado "aberto"
+        if (t && t.status === 'aberto') {
+          await db.from('support_tickets').update({ status: 'em_atendimento' }).eq('id', id)
+          t.status = 'em_atendimento'
+        }
+        return json({ ok: true, data: { ticket: t, messages: msgs ?? [] } })
+      }
+
+      case 'support_reply': {
+        const id = str(body.ticket_id, 64)
+        const text = str(body.message, 2000)
+        if (!text) throw new ApiError(400, 'EMPTY', 'Resposta vazia.')
+        await db.from('support_messages').insert({ ticket_id: id, sender: 'admin', body: text })
+        await db.from('support_tickets').update({ status: 'aguardando_empresa', updated_at: new Date().toISOString() }).eq('id', id)
+        return json({ ok: true })
+      }
+
+      case 'support_status': {
+        const st = str(body.status, 20)
+        if (!['aberto', 'em_atendimento', 'aguardando_empresa', 'resolvido'].includes(st)) throw new ApiError(400, 'BAD', 'Status inválido.')
+        await db.from('support_tickets').update({ status: st, updated_at: new Date().toISOString() }).eq('id', str(body.id, 64))
+        return json({ ok: true })
+      }
+
       default: throw new ApiError(400, 'BAD_ACTION', 'Ação desconhecida.')
     }
   } catch (e) { return errorResponse(e) }

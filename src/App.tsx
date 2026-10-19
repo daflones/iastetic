@@ -24,6 +24,7 @@ import AdminPage from '@/pages/admin/AdminPage'
 import PaymentResultPage from '@/pages/PaymentResultPage'
 import BookingPage from '@/pages/public/BookingPage'
 import MyPagePage from '@/pages/app/MyPagePage'
+import SupportPage from '@/pages/app/SupportPage'
 
 function FullLoader() {
   return (
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="arquivos" element={<FilesPage />} />
         <Route path="minha-pagina" element={<MyPagePage />} />
         <Route path="social" element={<SocialPage />} />
+        <Route path="suporte" element={<SupportPage />} />
       </Route>
       <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
