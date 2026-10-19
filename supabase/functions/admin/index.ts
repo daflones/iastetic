@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
           'MERCOSULPAY_API_KEY', 'MERCOSULPAY_WEBHOOK_SECRET',
           'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
           'EVOLUTION_URL', 'EVOLUTION_APIKEY',
-          'WEBHOOK_INGRESS_SECRET', 'CRON_SECRET', 'ADMIN_BOOTSTRAP_SECRET', 'PUBLIC_SITE_URL',
+          'WEBHOOK_INGRESS_SECRET', 'CRON_SECRET', 'ADMIN_BOOTSTRAP_SECRET', 'PUBLIC_SITE_URL', 'SERPER_API_KEY',
         ]
         const { data: row } = await db.from('platform_settings').select('value').eq('key', 'secrets').maybeSingle()
         const dbSecrets = row?.value ?? {}
@@ -536,26 +536,100 @@ function normPhone(raw?: string): string | null {
 }
 
 async function runProspectScan(db: any, opts: { niche: string; city: string; uf: string; radius: number }) {
-  // 1) geocodifica a cidade (Nominatim, gratuito)
-  const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&city=${encodeURIComponent(opts.city)}${opts.uf ? `&state=${encodeURIComponent(opts.uf)}` : ''}`,
-    { headers: { 'User-Agent': 'IAstetic-prospector/1.0 (iastetic.com.br)' }, signal: AbortSignal.timeout(20_000) })
-  const places = await geo.json().catch(() => [])
-  const place = places?.[0]
+  // 1) geocodifica a cidade (Nominatim, gratuito) — estruturada + fallback livre
+  const nomHeaders = { 'User-Agent': 'IAstetic-prospector/1.0 (iastetic.com.br)', 'Accept-Language': 'pt-BR' }
+  async function geocode(url: string) {
+    try {
+      const r = await fetch(url, { headers: nomHeaders, signal: AbortSignal.timeout(20_000) })
+      if (!r.ok) return null
+      return (await r.json().catch(() => []))?.[0] ?? null
+    } catch { return null }
+  }
+  let place = await geocode(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&city=${encodeURIComponent(opts.city)}${opts.uf ? `&state=${encodeURIComponent(opts.uf)}` : ''}`)
+  if (!place) {
+    const q = [opts.city, opts.uf, 'Brasil'].filter(Boolean).join(', ')
+    place = await geocode(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`)
+  }
   if (!place) throw new ApiError(404, 'CITY_NOT_FOUND', `Cidade "${opts.city}" não encontrada. Confira o nome/UF.`)
   const lat = Number(place.lat), lon = Number(place.lon)
 
-  // 2) Overpass API (OpenStreetMap, gratuito): estabelecimentos de beleza/grooming no raio
-  const query = `[out:json][timeout:40];
+  // 2) POIs: Serper (Google Maps real, se chave configurada) -> Overpass (mirrors) -> Photon
+  let elements: any[] = []
+
+  const serperKey = await getSecret('SERPER_API_KEY')
+  if (serperKey) {
+    const TERMS: Record<string, string> = {
+      salao: 'salão de beleza', barbearia: 'barbearia', unhas: 'manicure esmalteria',
+      olhar: 'sobrancelha cílios', clinica: 'clínica de estética', todos: 'salão de beleza barbearia manicure estética',
+    }
+    try {
+      const r = await fetch('https://google.serper.dev/maps', {
+        method: 'POST', signal: AbortSignal.timeout(30_000),
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: `${TERMS[opts.niche] ?? TERMS.todos} em ${opts.city}${opts.uf ? ` ${opts.uf}` : ''}`, ll: `@${lat},${lon},13z`, gl: 'br', hl: 'pt-br', num: 100 }),
+      })
+      if (r.ok) {
+        for (const pl of (await r.json())?.places ?? []) {
+          if (!pl?.title) continue
+          elements.push({ lat: pl.latitude, lon: pl.longitude, tags: {
+            name: pl.title, phone: pl.phoneNumber, website: pl.website,
+            'addr:street': pl.address, osm_value_hint: pl.type ?? pl.category,
+          } })
+        }
+      }
+    } catch { /* cai pro Overpass */ }
+  }
+
+  if (!elements.length) {
+    const query = `[out:json][timeout:40];
 (nwr["shop"~"hairdresser|beauty|massage|cosmetics"]["name"](around:${opts.radius},${lat},${lon});
  nwr["amenity"="spa"]["name"](around:${opts.radius},${lat},${lon});
- nwr["healthcare"="beauty"]["name"](around:${opts.radius},${lat},${lon}););
+ nwr["healthcare"="beauty"]["name"](around:${opts.radius},${lat},${lon});
+ nwr["office"~"beauty|aesthetic"]["name"](around:${opts.radius},${lat},${lon}););
 out tags center 300;`
-  const ov = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`, signal: AbortSignal.timeout(60_000),
-  })
-  if (!ov.ok) throw new ApiError(502, 'OVERPASS_FAILED', `Fonte de dados indisponível (${ov.status}). Tente de novo em instantes.`)
-  const elements = (await ov.json())?.elements ?? []
+    const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.nchc.org.tw/api/interpreter']
+    for (const host of OVERPASS) {
+      try {
+        const ov = await fetch(host, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'IAstetic-prospector/1.0' },
+          body: `data=${encodeURIComponent(query)}`, signal: AbortSignal.timeout(45_000),
+        })
+        if (ov.ok) { elements = (await ov.json())?.elements ?? []; break }
+      } catch { /* proximo mirror */ }
+    }
+  }
+
+  if (!elements.length) {
+    // fallback Photon (OSM): busca por termo com bias de coordenada, filtrado pelo raio
+    const TERMS: Record<string, string[]> = {
+      salao: ['salão', 'cabeleireiro'], barbearia: ['barbearia', 'barbeiro'],
+      unhas: ['manicure', 'esmalteria', 'unhas'], olhar: ['sobrancelha', 'cílios'],
+      clinica: ['estética', 'spa', 'depilação', 'massagem'],
+      todos: ['salão', 'cabeleireiro', 'barbearia', 'manicure', 'sobrancelha', 'estética', 'spa', 'depilação'],
+    }
+    const seen = new Set<string>()
+    const dist = (la: number, lo: number) => {
+      const dLa = (la - lat) * 111, dLo = (lo - lon) * 111 * Math.cos(lat * Math.PI / 180)
+      return Math.hypot(dLa, dLo) * 1000 // metros
+    }
+    for (const term of TERMS[opts.niche] ?? TERMS.todos) {
+      try {
+        const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&limit=50&lat=${lat}&lon=${lon}&lang=pt`,
+          { headers: nomHeaders, signal: AbortSignal.timeout(15_000) })
+        if (!r.ok) continue
+        for (const f of (await r.json())?.features ?? []) {
+          const pr = f.properties ?? {}, [flo, fla] = f.geometry?.coordinates ?? []
+          if (!pr.name || seen.has(pr.name.toLowerCase()) || dist(fla, flo) > opts.radius * 1.5) continue
+          seen.add(pr.name.toLowerCase())
+          elements.push({ lat: fla, lon: flo, tags: {
+            name: pr.name, shop: pr.osm_key === 'shop' ? pr.osm_value : undefined, amenity: pr.osm_key === 'amenity' ? pr.osm_value : undefined,
+            'addr:street': pr.street, 'addr:housenumber': pr.housenumber, 'addr:suburb': pr.district, 'addr:city': pr.city,
+          } })
+        }
+      } catch { /* proximo termo */ }
+    }
+  }
+  if (!elements.length) throw new ApiError(502, 'MAP_DATA', 'Fontes de dados de mapa indisponíveis agora. Tente de novo em instantes.')
 
   // 3) extrai + filtra leads
   const leads: any[] = []

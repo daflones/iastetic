@@ -1168,7 +1168,7 @@ function ProspectCard() {
         <div className="grid lg:grid-cols-2 gap-5">
           <div className="card-lux p-5 space-y-4">
             <h3 className="font-display font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-brand-500" /> Nova varredura</h3>
-            <p className="text-xs text-ink-muted">Busca estabelecimentos de beleza em dados públicos de mapa (OpenStreetMap) — sem API paga. Depois valida quais têm WhatsApp pela instância do admin.</p>
+            <p className="text-xs text-ink-muted">Busca estabelecimentos de beleza em dados públicos de mapa — com <code className="text-[10px]">SERPER_API_KEY</code> em Integrações usa o Google Maps real (mais telefones). Depois valida WhatsApp pela instância do admin.</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Nicho</label>
