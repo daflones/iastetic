@@ -1,7 +1,7 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { serviceClient } from '../_shared/db.ts'
 import { runAgent, type AgentContext, nowInTz } from '../_shared/agent.ts'
-import { logUsage } from '../_shared/nvidia.ts'
+import { logUsage, synthesizeSpeech } from '../_shared/nvidia.ts'
 import type { ChatMessage } from '../_shared/nvidia.ts'
 
 const MAX_TURNS = 3
@@ -52,7 +52,17 @@ Deno.serve(async (req) => {
     const msgs = [...session.messages, { role: 'user', content: message }, { role: 'assistant', content: result.text }]
     await db.from('demo_sessions').update({ messages: msgs, turns: newTurns, updated_at: new Date().toISOString() }).eq('id', session.id)
 
-    return json({ ok: true, data: { session_id: session.id, reply: result.text, done: newTurns >= MAX_TURNS } })
+    // 2ª resposta sai também em áudio — a pessoa ouve a fluidez do TTS (ElevenLabs -> OpenRouter -> Google)
+    let audio_b64: string | undefined, audio_mime: string | undefined
+    if (newTurns === 2) {
+      try {
+        const tts = await synthesizeSpeech(result.text.replace(/[*_#`]/g, ''), 'pt-BR')
+        audio_b64 = tts.base64; audio_mime = tts.mime
+        await logUsage(null, 'demo_tts', 'tts', { prompt_tokens: result.text.length })
+      } catch (e) { console.error('demo tts', e) }
+    }
+
+    return json({ ok: true, data: { session_id: session.id, reply: result.text, audio_b64, audio_mime, done: newTurns >= MAX_TURNS } })
   } catch (e) { return errorResponse(e) }
 })
 

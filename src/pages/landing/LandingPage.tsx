@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Sparkles, CalendarCheck, MessageCircle, CreditCard, Bell, BrainCircuit,
-  Check, ArrowRight, Send, Loader2, Bot, QrCode, ShieldCheck,
+  Check, ArrowRight, Send, Loader2, Bot, QrCode, ShieldCheck, Play, Pause, Volume2,
 } from 'lucide-react'
 import { FUNCTIONS_URL, SUPABASE_ANON_KEY, brl } from '@/lib/supabase'
 import { NICHES, NICHE_LIST, applyNicheTheme, type NicheId } from '@/lib/niches'
@@ -297,7 +297,7 @@ export default function LandingPage() {
 // ===================== Demo ao vivo =====================
 function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n: NicheId) => void }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [msgs, setMsgs] = useState<{ role: 'user' | 'ai'; text: string }[]>([])
+  const [msgs, setMsgs] = useState<{ role: 'user' | 'ai'; text: string; audio?: string }[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -328,7 +328,8 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
       const reply = data?.data?.reply ?? data?.error?.message ?? 'Ops, tente de novo.'
       setSessionId(data?.data?.session_id ?? sessionId)
       setDone(!!data?.data?.done)
-      setMsgs(m => [...m, { role: 'ai', text: reply }])
+      const audio = data?.data?.audio_b64 ? `data:${data.data.audio_mime ?? 'audio/mpeg'};base64,${data.data.audio_b64}` : undefined
+      setMsgs(m => [...m, { role: 'ai', text: reply, audio }])
     } catch {
       setMsgs(m => [...m, { role: 'ai', text: 'Conexão falhou — tente de novo em instantes.' }])
     } finally { setBusy(false) }
@@ -360,6 +361,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         {msgs.map((m, i) => (
           <div key={i} className={clsx('max-w-[82%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed animate-fade-up whitespace-pre-wrap',
             m.role === 'user' ? 'ml-auto bg-brand-500 text-white rounded-br-sm' : 'bg-surface border border-line rounded-bl-sm')}>
+            {m.audio && <DemoAudioBubble src={m.audio} autoplay />}
             {m.text}
           </div>
         ))}
@@ -394,6 +396,46 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         <button onClick={() => send('quanto custa?')} disabled={busy || done} className="text-[11px] rounded-full border border-line px-2.5 py-1 text-ink-soft hover:border-brand-300 hover:text-brand-600 transition disabled:opacity-40">quanto custa?</button>
         {!done && <span className="ml-auto self-center text-[10px] text-ink-muted">demo: {Math.max(0, 3 - msgs.filter(m => m.role === 'user').length)}/3 interações</span>}
       </div>
+    </div>
+  )
+}
+
+// ===================== Bolha de áudio da demo =====================
+function DemoAudioBubble({ src, autoplay }: { src: string; autoplay?: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [dur, setDur] = useState(0)
+  const [pos, setPos] = useState(0)
+
+  useEffect(() => {
+    const a = new Audio(src)
+    audioRef.current = a
+    a.onloadedmetadata = () => setDur(a.duration)
+    a.ontimeupdate = () => setPos(a.currentTime)
+    a.onended = () => setPlaying(false)
+    if (autoplay) a.play().then(() => setPlaying(true)).catch(() => {})
+    return () => { a.pause(); audioRef.current = null }
+  }, [src])
+
+  const toggle = () => {
+    const a = audioRef.current; if (!a) return
+    if (playing) { a.pause(); setPlaying(false) } else { a.play().then(() => setPlaying(true)).catch(() => {}) }
+  }
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  const bars = [40, 70, 55, 90, 65, 80, 45, 75, 60, 85, 50, 70, 40, 65, 55]
+
+  return (
+    <div className="flex items-center gap-2.5 mb-1.5 -mx-0.5 rounded-xl bg-brand-50/80 border border-brand-100 px-3 py-2">
+      <button onClick={toggle} className="h-8 w-8 rounded-full bg-brand-500 text-white grid place-items-center shrink-0 hover:bg-brand-600 transition">
+        {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 ml-0.5" />}
+      </button>
+      <div className="flex items-end gap-[2px] h-6 flex-1">
+        {bars.map((h, i) => (
+          <span key={i} className={clsx('w-[3px] rounded-full transition-colors', playing && i <= (pos / (dur || 1)) * bars.length ? 'bg-brand-500' : 'bg-brand-200')}
+            style={{ height: `${h}%`, ...(playing ? { animation: `pulse 0.8s ease-in-out ${i * 0.07}s infinite alternate` } : {}) }} />
+        ))}
+      </div>
+      <span className="text-[10px] text-ink-muted shrink-0 flex items-center gap-1"><Volume2 className="h-3 w-3" /> {dur ? fmt(pos) + ' / ' + fmt(dur) : 'voz da IA'}</span>
     </div>
   )
 }
