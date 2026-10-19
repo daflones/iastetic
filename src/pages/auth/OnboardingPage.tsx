@@ -282,7 +282,7 @@ export default function OnboardingPage() {
 
         {/* escolha do modo */}
         {mode === 'choose' && !needsConfirm && (
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="card-lux p-6 sm:p-8 shadow-glow">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="card-lux p-4 sm:p-8 shadow-glow">
             <h1 className="h-display text-2xl text-center">Vamos configurar seu negócio</h1>
             <p className="text-sm text-ink-muted text-center mt-2">Duas formas de fazer isso — escolhe a sua:</p>
             <div className="mt-6 grid sm:grid-cols-2 gap-4">
@@ -357,28 +357,28 @@ export default function OnboardingPage() {
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: .25 }}
               className="card-lux p-6 sm:p-8 shadow-glow">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <h1 className="h-display text-2xl">{steps[step].title}</h1>
-                <button className="btn-ghost text-xs" onClick={goToAI}><Bot className="h-3.5 w-3.5" /> configurar com IA</button>
+                <button className="btn-ghost text-xs shrink-0" onClick={goToAI}><Bot className="h-3.5 w-3.5" /> configurar com IA</button>
               </div>
 
               {step === 0 && (
                 <div className="mt-6 grid sm:grid-cols-2 gap-4">
                   {NICHE_LIST.map(x => (
                     <button key={x.id} onClick={() => pickNiche(x.id)}
-                      className={clsx('rounded-2xl border-2 text-left transition-all hover:-translate-y-0.5 overflow-hidden relative',
+                      className={clsx('rounded-2xl border-2 text-left transition-all hover:-translate-y-0.5 overflow-hidden relative flex sm:block items-stretch',
                         niche === x.id ? 'border-brand-500 shadow-glow' : 'border-line hover:border-brand-300')}>
                       {niche === x.id && (
                         <span className="absolute top-2.5 right-2.5 z-10 h-6 w-6 rounded-full bg-brand-500 text-white grid place-items-center shadow-soft">
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <div className="h-28 overflow-hidden">
+                      <div className="w-24 sm:w-full sm:h-28 shrink-0 overflow-hidden">
                         <Art name={`niche-${x.id}`} alt={x.name}
                           className={clsx('w-full h-full object-cover transition-transform duration-500', niche !== x.id && 'opacity-80 saturate-[.85]')}
                           placeholderClass="w-full h-full" />
                       </div>
-                      <div className="p-4">
+                      <div className="p-3.5 sm:p-4">
                         <p className="font-semibold">{x.name}</p>
                         <p className="text-xs text-ink-muted mt-1 leading-relaxed line-clamp-2">{x.description}</p>
                       </div>

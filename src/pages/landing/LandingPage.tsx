@@ -58,10 +58,10 @@ export default function LandingPage() {
 
       {/* Nav */}
       <header className="sticky top-0 z-30 glass border-b border-line/60">
-        <div className="container h-16 flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <Art name="logo" className="h-9 w-9 rounded-xl object-cover shadow-soft" placeholderClass="h-9 w-9 rounded-xl" />
-            <span className="font-display text-xl font-bold">IAstetic</span>
+        <div className="container h-16 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Art name="logo" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl object-cover shadow-soft" placeholderClass="h-8 w-8 sm:h-9 sm:w-9 rounded-xl" />
+            <span className="font-display text-lg sm:text-xl font-bold">IAstetic</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 ml-8 text-sm text-ink-soft">
             <button onClick={highlightDemo} className="link-underline hover:text-brand-600 transition">Teste ao vivo</button>
@@ -69,9 +69,9 @@ export default function LandingPage() {
             <a href="#planos" className="link-underline hover:text-brand-600 transition">Planos</a>
             <a href="#faq" className="link-underline hover:text-brand-600 transition">Dúvidas</a>
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <Link to="/login" className="btn-ghost">Entrar</Link>
-            <Link to="/cadastro" className="btn-primary">Começar grátis <ArrowRight className="h-4 w-4" /></Link>
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            <Link to="/login" className="btn-ghost !px-3 !py-2 text-sm">Entrar</Link>
+            <Link to="/cadastro" className="btn-primary !px-3.5 !py-2 text-sm whitespace-nowrap">Começar grátis <ArrowRight className="h-3.5 w-3.5" /></Link>
           </div>
         </div>
       </header>
@@ -85,7 +85,7 @@ export default function LandingPage() {
       </AnimatePresence>
 
       {/* Hero */}
-      <section className="container relative pt-14 pb-10 grid lg:grid-cols-2 gap-12 items-center">
+      <section className="container relative pt-8 sm:pt-14 pb-10 grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
         <Art name="hero-textura" className="pointer-events-none absolute inset-x-0 -top-24 w-full h-[46rem] object-cover opacity-60 -z-10" />
         <Art name="hero-glow" className="pointer-events-none absolute -top-20 -left-24 w-[38rem] opacity-50 blur-2xl -z-10" />
         <div>
@@ -104,7 +104,7 @@ export default function LandingPage() {
               <Link to="/cadastro" className="btn-primary text-base px-6 py-3">Teste grátis por 7 dias</Link>
               <button onClick={highlightDemo} className="btn-outline text-base px-6 py-3"><Bot className="h-5 w-5" /> Converse com a IA agora</button>
             </div>
-            <div className="mt-6 flex items-center gap-5 text-sm text-ink-muted">
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:text-sm text-ink-muted">
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-brand-500" /> Sem cartão</span>
               <span className="flex items-center gap-1.5"><Sparkles className="h-4 w-4 text-brand-500" /> A IA configura pra você</span>
               <span className="flex items-center gap-1.5"><QrCode className="h-4 w-4 text-brand-500" /> QR Code em 2 min</span>
@@ -365,17 +365,17 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         <span className="badge bg-white/15 text-white text-[10px]">TESTE AO VIVO</span>
       </div>
       {/* niche switch */}
-      <div className="px-4 pt-3 flex gap-2">
+      <div className="px-4 pt-3 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
         {NICHE_LIST.map(x => (
           <button key={x.id} onClick={() => onNicheChange(x.id)}
-            className={clsx('text-xs rounded-full px-3 py-1.5 font-medium transition inline-flex items-center gap-1.5',
+            className={clsx('text-xs rounded-full px-3 py-1.5 font-medium transition inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap',
               niche === x.id ? 'bg-brand-500 text-white' : 'bg-brand-50 text-ink-soft hover:bg-brand-100')}>
             <NicheArt id={x.id} className="h-4 w-4 rounded-full inline-block" /> {x.short}
           </button>
         ))}
       </div>
       {/* messages */}
-      <div ref={boxRef} className="h-[340px] overflow-y-auto px-4 py-4 space-y-2.5 bg-canvas/60">
+      <div ref={boxRef} className="h-[280px] sm:h-[340px] overflow-y-auto px-4 py-4 space-y-2.5 bg-canvas/60">
         {msgs.map((m, i) => (
           <div key={i} className={clsx('max-w-[82%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed animate-fade-up whitespace-pre-wrap',
             m.role === 'user' ? 'ml-auto bg-brand-500 text-white rounded-br-sm' : 'bg-surface border border-line rounded-bl-sm')}>
