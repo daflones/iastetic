@@ -1,5 +1,4 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
-import { requireUser } from '../_shared/db.ts'
 import { chat } from '../_shared/nvidia.ts'
 
 // Assistente de configuração (onboarding) — entrevista o dono e devolve patches JSON
@@ -48,7 +47,6 @@ FLUXO (pode pular etapas se o usuário já respondeu):
 Deno.serve(async (req) => {
   const pre = cors(req); if (pre) return pre
   try {
-    await requireUser(req)
     const body = await req.json().catch(() => ({}))
     const history: { role: 'user' | 'assistant'; content: string }[] = Array.isArray(body.history) ? body.history.slice(-16) : []
     const current = body.current ?? {}

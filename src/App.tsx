@@ -3,7 +3,6 @@ import type { ReactElement } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import LandingPage from '@/pages/landing/LandingPage'
 import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
 import OnboardingPage from '@/pages/auth/OnboardingPage'
 import AppLayout from '@/components/layout/AppLayout'
 import DashboardPage from '@/pages/app/DashboardPage'
@@ -57,10 +56,10 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/cadastro" element={<RegisterPage />} />
+      <Route path="/cadastro" element={<OnboardingPage />} />
       <Route path="/pagamento/:result" element={<PaymentResultPage />} />
       <Route path="/agendar/:slug" element={<BookingPage />} />
-      <Route path="/onboarding" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/app" element={<RequireAuth><RequireCompany><AppLayout /></RequireCompany></RequireAuth>}>
         <Route index element={<Navigate to="/app/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />

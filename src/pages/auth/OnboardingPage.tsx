@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ArrowRight, Bot, Check, Clock, Loader2, Lock, Pencil, Plus, Send, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Check, Clock, Loader2, Lock, Mail, Pencil, Plus, Send, Sparkles, Trash2 } from 'lucide-react'
 import { supabase, callFn } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { NICHES, NICHE_LIST, applyNicheTheme, type NicheId } from '@/lib/niches'
 import Art from '@/components/ui/Art'
 import PasswordInput from '@/components/ui/PasswordInput'
-import { maskPhoneBR, onlyDigits } from '@/lib/validators'
+import { maskPhoneBR, onlyDigits, isValidEmail } from '@/lib/validators'
 import clsx from 'clsx'
 
 const DAYS = [
@@ -31,11 +31,13 @@ async function sha256(text: string): Promise<string> {
 
 export default function OnboardingPage() {
   const nav = useNavigate()
-  const { refresh, company: existingCompany } = useAuth()
+  const { refresh, company: existingCompany, session } = useAuth() as any
   const [step, setStep] = useState(0)
   const [mode, setMode] = useState<'choose' | 'manual' | 'ai'>('choose')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [account, setAccount] = useState({ email: '', password: '', confirm: '' })
+  const [needsConfirm, setNeedsConfirm] = useState(false)
 
   const [niche, setNiche] = useState<NicheId | null>(null)
   const [company, setCompany] = useState({ name: '', whatsapp_public: '', address: '', city: '', state: '', instagram: '' })
@@ -61,10 +63,28 @@ export default function OnboardingPage() {
     if (existingCompany) nav('/app', { replace: true })
   }, [existingCompany?.id])
 
+  // volta da confirmação de e-mail: restaura tudo e cai direto na etapa da conta
+  useEffect(() => {
+    if (!session || existingCompany) return
+    try {
+      const d = JSON.parse(localStorage.getItem('onboarding_draft') || '')
+      if (!d?.niche) return
+      pickNiche(d.niche)
+      if (d.company) setCompany(d.company)
+      if (d.extra) setExtra(d.extra)
+      if (d.services?.length) setServices(d.services)
+      if (d.professionals?.length) setProfessionals(d.professionals)
+      if (d.hours) setHours(d.hours)
+      if (d.ai) setAi(d.ai)
+      setMode('manual'); setStep(6)
+    } catch { /* rascunho inválido — segue o fluxo normal */ }
+  }, [session, existingCompany])
+
   const steps = useMemo(() => [
     { id: 'niche', title: 'Seu negócio' }, { id: 'company', title: 'Dados' }, { id: 'extra', title: 'Detalhes' },
     { id: 'services', title: 'Serviços' }, { id: 'pros', title: 'Equipe' }, { id: 'hours', title: 'Horários' }, { id: 'ai', title: 'Sua IA' },
-  ], [])
+    ...(session ? [] : [{ id: 'account', title: 'Sua conta' }]),
+  ], [session])
 
   function pickNiche(id: NicheId) {
     setNiche(id); applyNicheTheme(id)
@@ -130,7 +150,16 @@ export default function OnboardingPage() {
       })
       applyPatch(r.patch)
       setChat([...history, { role: 'assistant', text: r.say }])
-      if (r.patch?.done) { finish(); return }
+      if (r.patch?.done) {
+        if (!session) {
+          setChat([...history, { role: 'assistant', text: `${r.say}
+
+Última etapa: crie seu acesso ao painel — é só e-mail e senha. 👇` }])
+          setMode('manual'); setStep(steps.length - 1); setChatBusy(false)
+          return
+        }
+        finish(); return
+      }
     } catch (e) {
       setChat([...history, { role: 'assistant', text: `Ops — ${(e as Error).message}. Tenta de novo?` }])
     }
@@ -150,8 +179,22 @@ export default function OnboardingPage() {
     if (!niche) return
     setBusy(true); setError('')
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Sessão expirada. Faça login novamente.')
+      let { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        // cadastro acontece aqui, no fim do wizard — só e-mail + senha
+        if (!isValidEmail(account.email)) throw new Error('Informe um e-mail válido (gmail, outlook, icloud…).')
+        if (account.password.length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres.')
+        if (account.password !== account.confirm) throw new Error('As senhas não conferem.')
+        const { data, error: eSign } = await supabase.auth.signUp({ email: account.email.trim(), password: account.password })
+        if (eSign) throw new Error(eSign.message.includes('already') ? 'Este e-mail já tem conta — faça login pra continuar.' : eSign.message)
+        ;(window as any).fbq?.('track', 'CompleteRegistration')
+        if (!data.session) {
+          // confirmação de e-mail ativa: guarda o rascunho e retoma depois do login
+          localStorage.setItem('onboarding_draft', JSON.stringify({ niche, company, extra, services, professionals, hours, ai }))
+          setNeedsConfirm(true); setBusy(false); return
+        }
+        user = data.user ?? data.session.user
+      }
       const { data: comp, error: e1 } = await supabase.from('companies').insert({
         name: company.name.trim(), niche, owner_id: user.id,
         whatsapp_public: company.whatsapp_public || null,
@@ -181,6 +224,7 @@ export default function OnboardingPage() {
         })))
         await supabase.from('professionals').insert(rows)
       }
+      localStorage.removeItem('onboarding_draft')
       await refresh()
       nav('/app/whatsapp?onboarding=1')
     } catch (e) {
@@ -222,8 +266,22 @@ export default function OnboardingPage() {
           ))}
         </div>
 
+        {/* confirmação de e-mail — rascunho salvo, volta depois do login */}
+        {needsConfirm && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="card-lux p-8 sm:p-10 shadow-glow text-center">
+            <span className="inline-grid place-items-center h-14 w-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 text-white shadow-glow"><Mail className="h-6 w-6" /></span>
+            <h1 className="h-display text-2xl mt-4">Confirme seu e-mail</h1>
+            <p className="text-sm text-ink-muted mt-2 leading-relaxed max-w-sm mx-auto">
+              Enviamos um link para <b className="text-ink">{account.email}</b>. Confirme e entre —
+              <b className="text-ink"> tudo que você preencheu está salvo</b> e a configuração continua de onde parou.
+            </p>
+            <Link to="/login" className="btn-primary mt-6 inline-flex">Ir para o login <ArrowRight className="h-4 w-4" /></Link>
+            <button onClick={() => setNeedsConfirm(false)} className="block mx-auto mt-3 text-xs text-ink-muted hover:text-ink underline">voltar e corrigir algo</button>
+          </motion.div>
+        )}
+
         {/* escolha do modo */}
-        {mode === 'choose' && (
+        {mode === 'choose' && !needsConfirm && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="card-lux p-6 sm:p-8 shadow-glow">
             <h1 className="h-display text-2xl text-center">Vamos configurar seu negócio</h1>
             <p className="text-sm text-ink-muted text-center mt-2">Duas formas de fazer isso — escolhe a sua:</p>
@@ -249,7 +307,7 @@ export default function OnboardingPage() {
         )}
 
         {/* modo IA — chat */}
-        {mode === 'ai' && (
+        {mode === 'ai' && !needsConfirm && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="card-lux shadow-glow overflow-hidden flex flex-col" style={{ height: '70vh' }}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-ink/10 bg-surface/70 backdrop-blur">
               <div className="flex items-center gap-2.5">
@@ -295,7 +353,7 @@ export default function OnboardingPage() {
         )}
 
         {/* modo manual — etapas */}
-        {mode === 'manual' && (
+        {mode === 'manual' && !needsConfirm && (
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: .25 }}
               className="card-lux p-6 sm:p-8 shadow-glow">
@@ -497,6 +555,30 @@ export default function OnboardingPage() {
                 </div>
               )}
 
+              {steps[step]?.id === 'account' && (
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-2xl bg-brand-50 border border-brand-200/70 p-4 flex gap-3">
+                    <Check className="h-5 w-5 text-brand-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-ink-soft leading-relaxed">
+                      <b>Quase lá!</b> Nome e WhatsApp do negócio já foram — aqui é só o <b>seu acesso ao painel</b>: e-mail e senha.
+                    </p>
+                  </div>
+                  <div><label className="label">E-mail *</label>
+                    <input type="email" className="input" placeholder="voce@email.com" value={account.email}
+                      onChange={e => setAccount({ ...account, email: e.target.value })} /></div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div><label className="label">Senha *</label>
+                      <PasswordInput value={account.password} onChange={e => setAccount({ ...account, password: e.target.value })} placeholder="mínimo 6 caracteres" /></div>
+                    <div><label className="label">Confirmar senha *</label>
+                      <PasswordInput value={account.confirm} onChange={e => setAccount({ ...account, confirm: e.target.value })} placeholder="repita a senha" />
+                      {account.confirm && account.password !== account.confirm && (
+                        <p className="mt-1.5 text-xs text-red-500">As senhas não conferem.</p>)}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-ink-muted">Ao concluir, criamos sua conta e já configuramos seu estabelecimento com tudo que você respondeu.</p>
+                </div>
+              )}
+
               {error && <p className="text-sm text-red-500 mt-4">{error}</p>}
 
               <div className="mt-8 flex items-center justify-between">
@@ -505,7 +587,9 @@ export default function OnboardingPage() {
                 </button>
                 <button className="btn-primary" onClick={next} disabled={busy}>
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {step === steps.length - 1 ? <>Concluir e conectar WhatsApp <Check className="h-4 w-4" /></> : <>Continuar <ArrowRight className="h-4 w-4" /></>}
+                  {step === steps.length - 1
+                    ? (session ? <>Concluir e conectar WhatsApp <Check className="h-4 w-4" /></> : <>Criar conta e concluir <Check className="h-4 w-4" /></>)
+                    : <>Continuar <ArrowRight className="h-4 w-4" /></>}
                 </button>
               </div>
             </motion.div>
