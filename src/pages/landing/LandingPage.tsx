@@ -131,14 +131,14 @@ export default function LandingPage() {
               className={clsx('text-left rounded-2xl border transition-all relative overflow-hidden group/card flex sm:block items-stretch',
                 niche === x.id ? 'border-brand-400 bg-brand-50 shadow-glow' : 'border-line bg-surface/80 hover:border-brand-200 hover:shadow-card')}>
               {niche === x.id && <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-brand-400 via-accent-500 to-brand-400 z-10" />}
-              <div className="relative w-20 sm:w-full sm:h-24 shrink-0 overflow-hidden">
+              <div className="relative w-20 min-h-[72px] sm:w-full sm:h-24 sm:min-h-0 shrink-0 overflow-hidden bg-brand-50/60">
                 <Art name={`niche-${x.id}`} alt={x.name}
                   className={clsx('w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105', niche !== x.id && 'opacity-80 saturate-[.85]')}
                   placeholderClass="w-full h-full" />
               </div>
-              <div className="p-3 sm:p-4">
+              <div className="p-3 sm:p-4 flex-1">
                 <p className="font-semibold text-sm">{x.name}</p>
-                <p className="text-[11px] text-ink-muted mt-1 leading-snug line-clamp-2">{x.tagline}</p>
+                <p className="text-[11px] text-ink-muted mt-1 leading-snug">{x.tagline}</p>
               </div>
             </motion.button>
           ))}

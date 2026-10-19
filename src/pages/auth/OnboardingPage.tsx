@@ -373,14 +373,14 @@ export default function OnboardingPage() {
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <div className="w-24 sm:w-full sm:h-28 shrink-0 overflow-hidden">
+                      <div className="w-24 min-h-[96px] sm:w-full sm:h-28 sm:min-h-0 shrink-0 overflow-hidden bg-brand-50/60">
                         <Art name={`niche-${x.id}`} alt={x.name}
                           className={clsx('w-full h-full object-cover transition-transform duration-500', niche !== x.id && 'opacity-80 saturate-[.85]')}
                           placeholderClass="w-full h-full" />
                       </div>
-                      <div className="p-3.5 sm:p-4">
+                      <div className="p-3.5 sm:p-4 flex-1">
                         <p className="font-semibold">{x.name}</p>
-                        <p className="text-xs text-ink-muted mt-1 leading-relaxed line-clamp-2">{x.description}</p>
+                        <p className="text-xs text-ink-muted mt-1 leading-relaxed">{x.description}</p>
                       </div>
                     </button>
                   ))}
