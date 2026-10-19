@@ -1068,8 +1068,9 @@ function ProspectCard() {
   const [msg, setMsg] = useState('')
   const [form, setForm] = useState({ niche: 'todos', city: '', uf: '', radius_km: 5 })
   const [f, setF] = useState({ only_no_site: false, only_valid_whatsapp: false, niche: '', status: '', search: '' })
-  const [camp, setCamp] = useState({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', audience: 'no_site_whatsapp' })
+  const [camp, setCamp] = useState({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', image_prompt: '', audience: 'no_site_whatsapp', interval_sec: 45, vary_messages: true })
   const [imgPrompt, setImgPrompt] = useState('')
+  const [imgEdit, setImgEdit] = useState(false)
 
   async function loadStats() { const d = await callFn<any>('admin', { action: 'prospect_stats' }).catch(() => null); setStats(d) }
   async function loadScans() { const d = await callFn<any[]>('admin', { action: 'prospect_scans' }).catch(() => []); setScans(d ?? []) }
@@ -1108,7 +1109,7 @@ function ProspectCard() {
     setBusy('camp')
     try {
       await callFn('admin', { action: 'prospect_campaign_save', ...camp })
-      setMsg('Campanha salva.'); setCamp({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', audience: 'no_site_whatsapp' }); loadCamps()
+      setMsg('Campanha salva.'); setCamp({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', image_prompt: '', audience: 'no_site_whatsapp', interval_sec: 45, vary_messages: true }); loadCamps()
     } catch (e) { setMsg((e as Error).message) }
     setBusy('')
   }
@@ -1118,16 +1119,18 @@ function ProspectCard() {
     setBusy(`launch-${id}`)
     try {
       const r = await callFn<any>('admin', { action: 'prospect_campaign_launch', campaign_id: id, lead_ids: selected.size ? [...selected] : undefined })
-      setMsg(`${r.queued} envios na fila — o cron dispara a cada minuto.`); setSelected(new Set()); loadCamps()
+      setMsg(`${r.queued} envios na fila — 1 a cada ~${r.interval_sec}s.`); setSelected(new Set()); loadCamps()
     } catch (e) { setMsg((e as Error).message) }
     setBusy('')
   }
 
   async function genImg() {
-    if (imgPrompt.trim().length < 10) { setMsg('Descreva a imagem (mín. 10 caracteres).'); return }
+    if (imgPrompt.trim().length < 4) { setMsg('Descreva a imagem.'); return }
     setBusy('img')
-    try { const r = await callFn<any>('admin', { action: 'prospect_gen_image', prompt: imgPrompt }); setCamp(c => ({ ...c, image_url: r.url })); setImgPrompt('') }
-    catch (e) { setMsg((e as Error).message) }
+    try {
+      const r = await callFn<any>('admin', { action: 'prospect_gen_image', prompt: imgPrompt, edit_of: imgEdit ? camp.image_prompt : undefined })
+      setCamp(c => ({ ...c, image_url: r.url, image_prompt: r.prompt })); setImgPrompt(''); setImgEdit(false)
+    } catch (e) { setMsg((e as Error).message) }
     setBusy('')
   }
 
@@ -1304,10 +1307,40 @@ function ProspectCard() {
               <option value="no_site_whatsapp">Sem site + WhatsApp válido (quentes)</option>
               <option value="all_valid">Todos com WhatsApp válido</option>
             </select>
-            {camp.image_url
-              ? <div className="relative"><img src={camp.image_url} className="rounded-xl w-full" /><button className="absolute top-2 right-2 btn-ghost !p-1.5 bg-white/80" onClick={() => setCamp({ ...camp, image_url: '' })}><X className="h-3.5 w-3.5" /></button></div>
-              : <div className="flex gap-2"><input className="input" placeholder="Descreva a arte da campanha pra gerar com IA…" value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} />
-                  <button className="btn-ghost text-xs whitespace-nowrap" onClick={genImg} disabled={busy === 'img'}>{busy === 'img' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkle className="h-3.5 w-3.5" />} Gerar</button></div>}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Intervalo entre envios (seg)</label>
+                <input className="input" inputMode="numeric" maxLength={3} value={camp.interval_sec}
+                  onChange={e => setCamp({ ...camp, interval_sec: Math.min(600, Math.max(15, Number(e.target.value.replace(/\D/g, '')) || 15)) })} />
+                <p className="text-[10px] text-ink-muted mt-0.5">15–600s — espaça os disparos p/ não parecer spam.</p>
+              </div>
+              <label className="flex items-start gap-2 text-xs text-ink-soft cursor-pointer pt-5">
+                <input type="checkbox" className="accent-brand-500 h-4 w-4 mt-0.5" checked={camp.vary_messages} onChange={e => setCamp({ ...camp, vary_messages: e.target.checked })} />
+                Variar a mensagem com IA — cada lead recebe uma redação diferente
+              </label>
+            </div>
+            {camp.image_url ? (
+              <div className="space-y-2">
+                <div className="relative">
+                  <img src={camp.image_url} className="rounded-xl w-full" />
+                  <button className="absolute top-2 right-2 btn-ghost !p-1.5 bg-white/80" onClick={() => { setCamp({ ...camp, image_url: '', image_prompt: '' }); setImgEdit(false) }}><X className="h-3.5 w-3.5" /></button>
+                </div>
+                {imgEdit ? (
+                  <div className="flex gap-2">
+                    <input className="input" placeholder="O que ajustar na arte? Ex.: coloca um cachorro" value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} autoFocus
+                      onKeyDown={e => e.key === 'Enter' && genImg()} />
+                    <button className="btn-ghost text-xs whitespace-nowrap" onClick={genImg} disabled={busy === 'img'}>
+                      {busy === 'img' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkle className="h-3.5 w-3.5" />} Aplicar
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn-ghost text-xs" onClick={() => setImgEdit(true)}><Pencil className="h-3.5 w-3.5" /> Editar arte</button>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-2"><input className="input" placeholder="Descreva a arte da campanha pra gerar com IA…" value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} onKeyDown={e => e.key === 'Enter' && genImg()} />
+                <button className="btn-ghost text-xs whitespace-nowrap" onClick={genImg} disabled={busy === 'img'}>{busy === 'img' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkle className="h-3.5 w-3.5" />} Gerar</button></div>
+            )}
             <button className="btn-primary w-full" onClick={saveCamp} disabled={!!busy}>{busy === 'camp' && <Loader2 className="h-4 w-4 animate-spin" />} Salvar campanha</button>
           </div>
 

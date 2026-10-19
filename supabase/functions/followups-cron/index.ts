@@ -306,7 +306,7 @@ async function dispatchJob(db: any, job: any): Promise<boolean> {
 // ---------- prospecção: disparos da instância do admin ----------
 async function dispatchProspectJobs(db: any): Promise<number> {
   const { data: jobs } = await db.from('prospect_jobs')
-    .select('*, prospect_campaigns(message,image_url,status)')
+    .select('*, prospect_campaigns(message,image_url,status,vary_messages)')
     .eq('status', 'pending').lte('scheduled_at', new Date().toISOString())
     .order('scheduled_at').limit(10)
   if (!jobs?.length) return 0
@@ -322,10 +322,20 @@ async function dispatchProspectJobs(db: any): Promise<number> {
     if (!camp || camp.status !== 'sending') { await db.from('prospect_jobs').update({ status: 'failed', error: 'campanha pausada/removida' }).eq('id', job.id); continue }
     try {
       const { data: lead } = await db.from('prospect_leads').select('name,city,niche').eq('id', job.lead_id).maybeSingle()
-      const msg = String(camp.message)
+      let msg = String(camp.message)
         .replaceAll('{nome}', lead?.name ?? '')
         .replaceAll('{cidade}', lead?.city ?? '')
         .replaceAll('{nicho}', lead?.niche ?? '')
+      // variação por IA — cada lead recebe redação diferente (anti-spam)
+      if (camp.vary_messages) {
+        try {
+          const varied = await chatText([
+            { role: 'system', content: 'Você reescreve mensagens de prospecção de WhatsApp. Mantenha o sentido, a oferta e a pergunta final (CTA), mas mude abertura, ordem e redação para não parecer mensagem em massa. pt-BR, tom humano e direto, no máximo 1 emoji. Responda APENAS a mensagem final, sem aspas.' },
+            { role: 'user', content: `Lead: ${lead?.name ?? ''} (${lead?.niche ?? ''}, ${lead?.city ?? ''})\nMensagem base:\n${msg}` },
+          ], 350)
+          if (varied?.trim().length > 40) msg = varied.trim()
+        } catch { /* mantém original */ }
+      }
       const jid = `${job.phone}@s.whatsapp.net`
       if (camp.image_url) await sendMedia(inst, jid, camp.image_url, msg, 'iastetic.jpg')
       else await sendText(inst, jid, msg)

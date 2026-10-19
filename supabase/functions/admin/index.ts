@@ -1,6 +1,6 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { requireAdmin, requireUser, serviceClient } from '../_shared/db.ts'
-import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText } from '../_shared/evolution.ts'
+import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText, sendMedia, checkWhatsAppNumbers } from '../_shared/evolution.ts'
 import { chat, generateImage, type ChatMessage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
 
@@ -206,6 +206,158 @@ Deno.serve(async (req) => {
         if (!msg) throw new ApiError(400, 'EMPTY', 'Mensagem vazia.')
         const reply = await runAdminAssistant(db, msg, body.history ?? [])
         return json({ ok: true, data: { reply } })
+      }
+
+      // ================= PROSPECÇÃO =================
+      case 'prospect_scan': {
+        const niche = str(body.niche, 20) || 'todos'
+        const city = str(body.city, 80)
+        const uf = str(body.uf, 4).toUpperCase()
+        const radius = Math.min(Math.max(Number(body.radius_km) || 5, 1), 30) * 1000
+        if (!city) throw new ApiError(400, 'NO_CITY', 'Informe a cidade.')
+        const result = await runProspectScan(db, { niche, city, uf, radius })
+        return json({ ok: true, data: result })
+      }
+
+      case 'prospect_scans': {
+        const { data } = await db.from('prospect_scans').select('*').order('created_at', { ascending: false }).limit(30)
+        return json({ ok: true, data })
+      }
+
+      case 'prospect_leads': {
+        let q = db.from('prospect_leads').select('*').order('created_at', { ascending: false }).limit(400)
+        if (body.niche) q = q.eq('niche', str(body.niche, 20))
+        if (body.city) q = q.ilike('city', `%${str(body.city, 60)}%`)
+        if (body.status) q = q.eq('status', str(body.status, 20))
+        if (body.only_no_site) q = q.eq('has_site', false)
+        if (body.only_valid_whatsapp) q = q.eq('whatsapp_valid', true)
+        if (body.search) q = q.or(`name.ilike.%${str(body.search, 60)}%,phone.ilike.%${str(body.search, 20)}%`)
+        const { data } = await q
+        return json({ ok: true, data })
+      }
+
+      case 'prospect_stats': {
+        const [{ count: total }, { count: valid }, { count: noSite }, { count: hot },
+          { count: contacted }, { count: replied }, { count: converted }, { data: byNiche }] = await Promise.all([
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('whatsapp_valid', true),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('has_site', false),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('has_site', false).eq('whatsapp_valid', true),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('status', 'contatado'),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('status', 'respondeu'),
+          db.from('prospect_leads').select('id', { count: 'exact', head: true }).eq('status', 'convertido'),
+          db.from('prospect_leads').select('niche'),
+        ])
+        const niches: Record<string, number> = {}
+        for (const l of byNiche ?? []) niches[l.niche ?? '?'] = (niches[l.niche ?? '?'] ?? 0) + 1
+        return json({ ok: true, data: { total, valid_whatsapp: valid, without_site: noSite, hot, contacted, replied, converted, niches } })
+      }
+
+      case 'prospect_lead_update': {
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (body.status !== undefined) patch.status = str(body.status, 20)
+        if (body.tags !== undefined) patch.tags = Array.isArray(body.tags) ? body.tags.slice(0, 10).map((t: any) => str(t, 30)) : []
+        if (body.notes !== undefined) patch.notes = str(body.notes, 500)
+        if (body.niche !== undefined) patch.niche = str(body.niche, 20)
+        await db.from('prospect_leads').update(patch).eq('id', str(body.id, 64))
+        return json({ ok: true })
+      }
+
+      case 'prospect_lead_delete': {
+        await db.from('prospect_leads').delete().eq('id', str(body.id, 64))
+        return json({ ok: true })
+      }
+
+      case 'prospect_check_whatsapp': {
+        const inst = await adminInstance(db)
+        let q = db.from('prospect_leads').select('id,phone').not('phone', 'is', null).order('created_at').limit(400)
+        if (!body.recheck) q = q.is('whatsapp_valid', null)
+        const { data: leads } = await q
+        let checked = 0, valid = 0
+        for (let i = 0; i < (leads ?? []).length; i += 50) {
+          const chunk = (leads ?? []).slice(i, i + 50)
+          try {
+            const res = await checkWhatsAppNumbers(inst, chunk.map((l: any) => l.phone))
+            const byNum = new Map(res.map(r => [r.number.slice(-9), r.exists]))
+            for (const l of chunk) {
+              const v = byNum.get(l.phone.slice(-9))
+              if (v !== undefined) {
+                await db.from('prospect_leads').update({ whatsapp_valid: v }).eq('id', l.id)
+                checked++; if (v) valid++
+              }
+            }
+          } catch { /* próximo lote */ }
+        }
+        return json({ ok: true, data: { checked, valid } })
+      }
+
+      case 'prospect_gen_image': {
+        const prompt = str(body.prompt, 1000)
+        const base = str(body.edit_of, 1000) // prompt anterior — modo edição
+        if (prompt.length < 4) throw new ApiError(400, 'SHORT_PROMPT', 'Descreva a imagem.')
+        const brief = base
+          ? `Regenere a arte descrita a seguir mantendo o conceito e o estilo, aplicando este ajuste: "${prompt}". Arte base: "${base}".`
+          : prompt
+        const img = await generateImage(
+          `Peça gráfica promocional para WhatsApp de um SaaS chamado IAstetic (recepcionista com IA para salões, barbearias e clínicas de estética). Estilo moderno, gradiente rosa/lilás premium, limpo, SEM texto na imagem. ${brief}`,
+          { width: 1024, height: 1024 })
+        const bytes = Uint8Array.from(atob(img.base64), c => c.charCodeAt(0))
+        const path = `campanha/${crypto.randomUUID()}.png`
+        const { error: upErr } = await db.storage.from('prospect').upload(path, bytes, { contentType: img.mime })
+        if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
+        const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+        const fullPrompt = base ? `${base} | ajuste: ${prompt}` : prompt
+        return json({ ok: true, data: { url: pub.publicUrl, prompt: fullPrompt } })
+      }
+
+      case 'prospect_campaign_save': {
+        const row = {
+          name: str(body.name, 80),
+          message: str(body.message, 2000),
+          image_url: str(body.image_url, 500) || null,
+          image_prompt: str(body.image_prompt, 1000) || null,
+          audience: ['no_site_whatsapp', 'all_valid', 'custom'].includes(body.audience) ? body.audience : 'no_site_whatsapp',
+          interval_sec: Math.min(Math.max(Number(body.interval_sec) || 45, 15), 600),
+          vary_messages: body.vary_messages !== false,
+        }
+        if (!row.name || !row.message) throw new ApiError(400, 'EMPTY', 'Nome e mensagem são obrigatórios.')
+        if (body.id) await db.from('prospect_campaigns').update(row).eq('id', str(body.id, 64))
+        else await db.from('prospect_campaigns').insert(row)
+        return json({ ok: true })
+      }
+
+      case 'prospect_campaigns': {
+        const { data: camps } = await db.from('prospect_campaigns').select('*').order('created_at', { ascending: false }).limit(50)
+        const out = []
+        for (const c of camps ?? []) {
+          const [{ count: pending }, { count: failed }, { count: total }] = await Promise.all([
+            db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'pending'),
+            db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'failed'),
+            db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id),
+          ])
+          out.push({ ...c, pending: pending ?? 0, failed: failed ?? 0, total: total ?? 0 })
+        }
+        return json({ ok: true, data: out })
+      }
+
+      case 'prospect_campaign_launch': {
+        const campId = str(body.campaign_id, 64)
+        const { data: camp } = await db.from('prospect_campaigns').select('*').eq('id', campId).single()
+        if (!camp) throw new ApiError(404, 'NOT_FOUND', 'Campanha não encontrada.')
+        await adminInstance(db) // precisa estar conectada
+        let q = db.from('prospect_leads').select('id,phone').not('phone', 'is', null).eq('whatsapp_valid', true)
+        if (camp.audience === 'no_site_whatsapp') q = q.eq('has_site', false)
+        if (Array.isArray(body.lead_ids) && body.lead_ids.length) q = q.in('id', body.lead_ids.slice(0, 300))
+        else q = q.in('status', ['novo', 'contatado']).limit(500)
+        const { data: leads } = await q
+        const intervalSec = Math.min(Math.max(Number(body.interval_sec ?? camp.interval_sec) || 45, 15), 600)
+        const jobs = (leads ?? []).map((l: any, i: number) => ({
+          campaign_id: campId, lead_id: l.id, phone: l.phone,
+          scheduled_at: new Date(Date.now() + i * intervalSec * 1000).toISOString(),
+        }))
+        if (jobs.length) await db.from('prospect_jobs').upsert(jobs, { onConflict: 'campaign_id,phone', ignoreDuplicates: true })
+        await db.from('prospect_campaigns').update({ status: 'sending' }).eq('id', campId)
+        return json({ ok: true, data: { queued: jobs.length, interval_sec: intervalSec } })
       }
 
       default: throw new ApiError(400, 'BAD_ACTION', 'Ação desconhecida.')
