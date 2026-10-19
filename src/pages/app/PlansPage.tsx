@@ -36,7 +36,8 @@ function upgradeGains(p: Plan, cur: Plan | null): string[] {
 export default function PlansPage() {
   const { company, plan } = useAuth()
   const [plans, setPlans] = useState<Plan[]>([])
-  const [paying, setPaying] = useState<Plan | null>(null)
+  const [yearly, setYearly] = useState(false)
+  const [paying, setPaying] = useState<{ plan: Plan; period: 'monthly' | 'yearly' } | null>(null)
   const [quota, setQuota] = useState<any>(null)
   const [recharge, setRecharge] = useState<string | null>(null)
 
@@ -127,6 +128,21 @@ export default function PlansPage() {
         </div>
       )}
 
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="font-display font-semibold text-lg">Conheça outros planos</h2>
+        <div className="inline-flex items-center rounded-full bg-brand-50 p-1 ring-1 ring-brand-200">
+          {(['Mensal', 'Anual'] as const).map(l => {
+            const active = yearly === (l === 'Anual')
+            return (
+              <button key={l} onClick={() => setYearly(l === 'Anual')}
+                className={clsx('px-4 py-1.5 rounded-full text-xs font-semibold transition-all', active ? 'bg-brand-600 text-white shadow-soft' : 'text-ink-muted hover:text-ink')}>
+                {l}{l === 'Anual' && <span className={clsx('ml-1.5 text-[9px]', active ? 'text-white/90' : 'text-emerald-600')}>economize</span>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="grid lg:grid-cols-3 gap-5">
         {plans.map((p, i) => {
           const current = p.id === plan?.id
@@ -142,8 +158,19 @@ export default function PlansPage() {
                 <h3 className="font-display font-semibold text-lg">{p.name}</h3>
               </div>
               <div className="mt-3 relative">
-                <span className="font-display text-4xl font-bold">{brl(p.price_cents)}</span>
-                <span className="text-sm text-ink-muted">/mês</span>
+                {(() => {
+                  const yearlyPrice = p.yearly_price_cents ?? p.price_cents * 12
+                  const monthlyEq = Math.round(yearlyPrice / 12)
+                  const pctOff = Math.round((1 - yearlyPrice / (p.price_cents * 12)) * 100)
+                  return (
+                    <>
+                      <span className="font-display text-4xl font-bold">{brl(yearly ? monthlyEq : p.price_cents)}</span>
+                      <span className="text-sm text-ink-muted">/mês</span>
+                      {yearly && <span className="block text-[11px] text-ink-muted">cobrado {brl(yearlyPrice)}/ano{pctOff > 0 && <b className="text-emerald-600"> · economize {pctOff}%</b>}</span>}
+                      {!yearly && p.yearly_price_cents && <span className="block text-[11px] text-accent-700 font-medium">ou {brl(p.yearly_price_cents)}/ano ({pctOff}% off)</span>}
+                    </>
+                  )
+                })()}
               </div>
               <ul className="mt-4 space-y-2 text-sm text-ink-soft flex-1">
                 <li className="flex gap-2"><Check className="h-4 w-4 text-brand-500 shrink-0" /> {p.instances_limit} número(s) de WhatsApp</li>
@@ -174,7 +201,7 @@ export default function PlansPage() {
               {current ? (
                 <div className="mt-5 rounded-xl bg-gradient-to-r from-brand-50 to-accent-100 text-brand-700 text-center text-sm font-semibold py-2.5 ring-1 ring-brand-200 flex items-center justify-center gap-1.5"><Check className="h-4 w-4" /> Seu plano atual</div>
               ) : (
-                <button className={clsx('mt-5', hot ? 'btn-primary' : 'btn-outline')} onClick={() => setPaying(p)}>
+                <button className={clsx('mt-5', hot ? 'btn-primary' : 'btn-outline')} onClick={() => setPaying({ plan: p, period: yearly ? 'yearly' : 'monthly' })}>
                   {plan && p.price_cents < plan.price_cents ? `Trocar para ${p.name}` : `Assinar ${p.name}`}
                 </button>
               )}
@@ -190,7 +217,7 @@ export default function PlansPage() {
         <p>• Carteira: se você já tem saldo na carteira iastetic, pode pagar com ele.</p>
       </div>
 
-      {paying && <PayModal plan={paying} companyId={company.id} onClose={() => setPaying(null)} />}
+      {paying && <PayModal plan={paying.plan} period={paying.period} companyId={company.id} onClose={() => setPaying(null)} />}
       {recharge && quota && (
         <RechargeModal resource={recharge} info={quota.resources[recharge]} unitPrice={quota.unit_price_cents}
           onClose={(done) => { setRecharge(null); if (done) loadQuota() }} />
@@ -263,11 +290,12 @@ function RechargeModal({ resource, info, unitPrice, onClose }: { resource: strin
   )
 }
 
-function PayModal({ plan, companyId, onClose }: { plan: Plan; companyId: string; onClose: () => void }) {
+function PayModal({ plan, period, companyId, onClose }: { plan: Plan; period: 'monthly' | 'yearly'; companyId: string; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [pix, setPix] = useState<{ qr: string } | null>(null)
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const amount = period === 'yearly' ? (plan.yearly_price_cents ?? plan.price_cents * 12) : plan.price_cents
 
   useEffect(() => {
     supabase.from('wallets').select('balance_cents').eq('company_id', companyId).single().then(({ data }) => setWalletBalance(data?.balance_cents ?? 0))
@@ -276,7 +304,7 @@ function PayModal({ plan, companyId, onClose }: { plan: Plan; companyId: string;
   async function pay(m: 'pix' | 'card' | 'wallet') {
     setBusy(true); setError('')
     try {
-      const r = await callFn<{ checkout_url?: string; qr_code?: string }>('payments', { action: 'subscribe', plan_id: plan.id, method: m })
+      const r = await callFn<{ checkout_url?: string; qr_code?: string }>('payments', { action: 'subscribe', plan_id: plan.id, method: m, period })
       if (m === 'card') { window.location.href = r.checkout_url!; return }
       if (m === 'pix') setPix({ qr: r.qr_code! })
       if (m === 'wallet') onClose()
@@ -290,7 +318,7 @@ function PayModal({ plan, companyId, onClose }: { plan: Plan; companyId: string;
         <div className="flex items-center justify-between mb-5">
           <div>
             <h3 className="font-display font-semibold text-lg">Assinar {plan.name}</h3>
-            <p className="text-sm text-ink-muted">{brl(plan.price_cents)}/mês</p>
+            <p className="text-sm text-ink-muted">{period === 'yearly' ? `${brl(amount)}/ano` : `${brl(amount)}/mês`}</p>
           </div>
           <button className="btn-ghost !p-1.5" onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
@@ -305,12 +333,12 @@ function PayModal({ plan, companyId, onClose }: { plan: Plan; companyId: string;
               <span className="h-9 w-9 rounded-lg bg-indigo-100 grid place-items-center text-indigo-600"><CreditCard className="h-4 w-4" /></span>
               <div><p className="font-semibold text-sm">Cartão de crédito</p><p className="text-xs text-ink-muted">Renova todo mês sozinho (Stripe)</p></div>
             </button>
-            <button className="w-full card !border-line hover:!border-brand-400 p-4 flex items-center gap-3 text-left transition disabled:opacity-50" disabled={busy || (walletBalance ?? 0) < plan.price_cents} onClick={() => pay('wallet')}>
+            <button className="w-full card !border-line hover:!border-brand-400 p-4 flex items-center gap-3 text-left transition disabled:opacity-50" disabled={busy || (walletBalance ?? 0) < amount} onClick={() => pay('wallet')}>
               <span className="h-9 w-9 rounded-lg bg-brand-100 grid place-items-center text-brand-600"><Wallet className="h-4 w-4" /></span>
               <div>
                 <p className="font-semibold text-sm">Saldo da carteira</p>
                 <p className="text-xs text-ink-muted">
-                  {(walletBalance ?? 0) >= plan.price_cents ? `você tem ${brl(walletBalance ?? 0)}` : `faltam ${brl(plan.price_cents - (walletBalance ?? 0))} — deposite por Pix`}
+                  {(walletBalance ?? 0) >= amount ? `você tem ${brl(walletBalance ?? 0)}` : `faltam ${brl(amount - (walletBalance ?? 0))} — deposite por Pix`}
                 </p>
               </div>
             </button>

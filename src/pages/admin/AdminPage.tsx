@@ -966,6 +966,11 @@ function PlansCard() {
             <p className="font-display font-bold text-lg">{p.name}</p>
             <p className="text-xs text-ink-muted">{p.slug} {p.niche && `· ${NICHES[p.niche as keyof typeof NICHES]?.name ?? p.niche}`} {!p.active && '· inativo'}</p>
             <p className="mt-2 text-2xl font-display font-bold text-brand-700">{brl(p.price_cents)}<span className="text-xs font-normal text-ink-muted">/mês</span></p>
+            {p.yearly_price_cents != null && (
+              <p className="text-[11px] text-emerald-600 font-medium">
+                {brl(p.yearly_price_cents)}/ano ({Math.round((1 - p.yearly_price_cents / (p.price_cents * 12)) * 100)}% off)
+              </p>
+            )}
             <ul className="mt-3 space-y-1 text-xs text-ink-soft">
               <li>{p.instances_limit} conexão(ões) · {p.professionals_limit} profissionais</li>
               <li>{Number(p.monthly_messages_limit).toLocaleString('pt-BR')} msgs/mês</li>
@@ -1008,7 +1013,8 @@ function PlansCard() {
                 <div><label className="label">Imagens salvas (máx)</label><input type="number" min={0} className="input" value={editing.image_storage_limit ?? 0} onChange={e => setEditing({ ...editing, image_storage_limit: +e.target.value })} /></div>
                 <div><label className="label">Áudios assistente/mês</label><input type="number" min={0} className="input" value={editing.assistant_audio_quota ?? 0} onChange={e => setEditing({ ...editing, assistant_audio_quota: +e.target.value })} /></div>
                 <div><label className="label">Áudios p/ clientes/mês</label><input type="number" min={0} className="input" value={editing.customer_audio_quota ?? 0} onChange={e => setEditing({ ...editing, customer_audio_quota: +e.target.value })} /></div>
-                <div><label className="label">Stripe price ID</label><input className="input" value={editing.stripe_price_id ?? ''} onChange={e => setEditing({ ...editing, stripe_price_id: e.target.value || null })} /></div>
+                <div><label className="label">Stripe price ID (mensal)</label><input className="input" value={editing.stripe_price_id ?? ''} onChange={e => setEditing({ ...editing, stripe_price_id: e.target.value || null })} /></div>
+                <div><label className="label">Stripe price ID (anual)</label><input className="input" value={editing.stripe_yearly_price_id ?? ''} onChange={e => setEditing({ ...editing, stripe_yearly_price_id: e.target.value || null })} /></div>
               </div>
               <div><label className="label">Descrição</label><textarea className="input" rows={2} value={editing.description ?? ''} onChange={e => setEditing({ ...editing, description: e.target.value })} /></div>
               <div>

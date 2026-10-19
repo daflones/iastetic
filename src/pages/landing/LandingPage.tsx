@@ -32,6 +32,7 @@ const FAQS = [
 export default function LandingPage() {
   const [niche, setNiche] = useState<NicheId>('olhar')
   const [plans, setPlans] = useState<Plan[]>([])
+  const [yearly, setYearly] = useState(false)
   const n = NICHES[niche]
 
   useEffect(() => { applyNicheTheme(niche) }, [niche])
@@ -194,7 +195,20 @@ export default function LandingPage() {
         <div className="container py-20">
           <h2 className="h-display text-3xl sm:text-4xl text-center">Planos que cabem no seu <span className="gradient-text">negócio</span></h2>
           <p className="text-center text-ink-muted mt-3">Pague no Pix (MercosulPay) ou cartão (Stripe). Saldo da carteira também paga a mensalidade.</p>
-          <div className="mt-12 grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="mt-6 flex justify-center">
+            <div className="inline-flex items-center rounded-full bg-brand-50 p-1 ring-1 ring-brand-200">
+              {(['Mensal', 'Anual'] as const).map(l => {
+                const active = yearly === (l === 'Anual')
+                return (
+                  <button key={l} onClick={() => setYearly(l === 'Anual')}
+                    className={clsx('px-5 py-1.5 rounded-full text-xs font-semibold transition-all', active ? 'bg-brand-600 text-white shadow-soft' : 'text-ink-muted hover:text-ink')}>
+                    {l}{l === 'Anual' && <span className={clsx('ml-1.5 text-[9px]', active ? 'text-white/90' : 'text-emerald-600')}>2 meses grátis</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div className="mt-8 grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {plans.map((p, i) => (
               <motion.div key={p.id}
                 initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ delay: i * 0.1, duration: 0.45 }}
@@ -203,8 +217,19 @@ export default function LandingPage() {
                 {p.highlight && <span className="badge bg-gradient-to-r from-brand-500 to-accent-500 text-white absolute -top-3 left-1/2 -translate-x-1/2 shadow-soft"><Sparkles className="h-3 w-3" /> Mais escolhido</span>}
                 <h3 className="font-display text-xl font-semibold">{p.name}</h3>
                 <p className="text-sm text-ink-muted mt-1 min-h-[40px]">{p.description}</p>
-                <p className="mt-4"><span className="text-4xl font-bold">{brl(p.price_cents)}</span><span className="text-ink-muted text-sm">/mês</span></p>
-                {p.yearly_price_cents && <p className="text-xs text-accent-700 font-medium mt-1">ou {brl(p.yearly_price_cents)}/ano (2 meses grátis)</p>}
+                {(() => {
+                  const yearlyPrice = p.yearly_price_cents ?? p.price_cents * 12
+                  const monthlyEq = Math.round(yearlyPrice / 12)
+                  const pctOff = Math.round((1 - yearlyPrice / (p.price_cents * 12)) * 100)
+                  return (
+                    <p className="mt-4">
+                      <span className="text-4xl font-bold">{brl(yearly ? monthlyEq : p.price_cents)}</span>
+                      <span className="text-ink-muted text-sm">/mês</span>
+                      {yearly && <span className="block text-[11px] text-ink-muted">cobrado {brl(yearlyPrice)}/ano{pctOff > 0 && <b className="text-emerald-600"> · economize {pctOff}%</b>}</span>}
+                      {!yearly && p.yearly_price_cents && <span className="block text-xs text-accent-700 font-medium mt-1">ou {brl(p.yearly_price_cents)}/ano ({pctOff}% off)</span>}
+                    </p>
+                  )
+                })()}
                 <ul className="mt-5 space-y-2.5 text-sm text-ink-soft flex-1">
                   <li className="flex gap-2"><Check className="h-4 w-4 text-brand-500 shrink-0 mt-0.5" />{p.instances_limit} número(s) de WhatsApp</li>
                   <li className="flex gap-2"><Check className="h-4 w-4 text-brand-500 shrink-0 mt-0.5" />Até {p.professionals_limit} profissionais</li>
