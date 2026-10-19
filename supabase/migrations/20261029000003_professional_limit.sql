@@ -8,7 +8,7 @@ begin
   from public.companies c left join public.plans p on p.id = c.plan_id
   where c.id = new.company_id;
 
-  if st = 'trial' then lim := least(coalesce(lim, 3), 3) end if;
+  if st = 'trial' then lim := least(coalesce(lim, 3), 3); end if;
   lim := coalesce(lim, 3);
 
   if coalesce(new.active, true) then
