@@ -6,6 +6,7 @@ import {
   CheckCircle2, XCircle, QrCode, MessageSquareText, Send, Users, Sparkle,
   CalendarDays, Wallet, ChevronRight, Power, BrainCircuit, KeyRound, Crown, Plus, Pencil,
   LayoutDashboard, TrendingUp, TrendingDown, Menu, Activity, Mic, Square, Bot, Image, Volume2,
+  Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -20,7 +21,7 @@ import { useRecorder } from '@/hooks/useRecorder'
 import { QRCodeSVG } from 'qrcode.react'
 import clsx from 'clsx'
 
-type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'whatsapp' | 'assistant' | 'integrations' | 'settings'
+type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'prospect' | 'whatsapp' | 'assistant' | 'integrations' | 'settings'
 
 const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] = [
   {
@@ -35,6 +36,7 @@ const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] =
   {
     title: 'Operação',
     items: [
+      { id: 'prospect', label: 'Prospecção', icon: Target },
       { id: 'whatsapp', label: 'WhatsApp do admin', icon: QrCode },
       { id: 'assistant', label: 'Assistente', icon: BrainCircuit },
       { id: 'integrations', label: 'Integrações', icon: KeyRound },
@@ -427,6 +429,7 @@ export default function AdminPage() {
           )}
 
           {tab === 'plans' && <PlansCard />}
+          {tab === 'prospect' && <ProspectCard />}
           {tab === 'whatsapp' && <AdminWhatsappCard />}
           {tab === 'assistant' && <AdminAssistantCard />}
           {tab === 'integrations' && <SecretsCard />}
@@ -1030,6 +1033,305 @@ function PlansCard() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+// ================= PROSPECÇÃO =================
+const LEAD_STATUS = [
+  { id: 'novo', label: 'Novo', cls: 'bg-slate-100 text-slate-600' },
+  { id: 'contatado', label: 'Contatado', cls: 'bg-blue-100 text-blue-700' },
+  { id: 'respondeu', label: 'Respondeu', cls: 'bg-emerald-100 text-emerald-700' },
+  { id: 'convertido', label: 'Convertido', cls: 'bg-brand-100 text-brand-700' },
+  { id: 'descartado', label: 'Descartado', cls: 'bg-red-100 text-red-500' },
+]
+const DEFAULT_PROSPECT_MSG = `Oi! Tudo bem? Vi o {nome} aqui em {cidade} e reparei que vocês ainda não têm página de agendamento própria 🙂
+
+Eu sou da IAstetic — a gente coloca uma recepcionista com IA no WhatsApp do estabelecimento: ela agenda, responde clientes, cobra sinal no Pix e ainda cria um site de agendamento com a cara do seu negócio.
+
+Posso te mandar uma demonstração rapidinho?`
+
+function ProspectCard() {
+  const [sub, setSub] = useState<'scan' | 'leads' | 'camps'>('scan')
+  const [stats, setStats] = useState<any>(null)
+  const [scans, setScans] = useState<any[]>([])
+  const [leads, setLeads] = useState<any[]>([])
+  const [camps, setCamps] = useState<any[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const [form, setForm] = useState({ niche: 'todos', city: '', uf: '', radius_km: 5 })
+  const [f, setF] = useState({ only_no_site: false, only_valid_whatsapp: false, niche: '', status: '', search: '' })
+  const [camp, setCamp] = useState({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', audience: 'no_site_whatsapp' })
+  const [imgPrompt, setImgPrompt] = useState('')
+
+  async function loadStats() { const d = await callFn<any>('admin', { action: 'prospect_stats' }).catch(() => null); setStats(d) }
+  async function loadScans() { const d = await callFn<any[]>('admin', { action: 'prospect_scans' }).catch(() => []); setScans(d ?? []) }
+  async function loadLeads() {
+    const d = await callFn<any[]>('admin', {
+      action: 'prospect_leads', niche: f.niche || undefined, status: f.status || undefined,
+      only_no_site: f.only_no_site || undefined, only_valid_whatsapp: f.only_valid_whatsapp || undefined,
+      search: f.search || undefined,
+    }).catch(() => [])
+    setLeads(d ?? [])
+  }
+  async function loadCamps() { const d = await callFn<any[]>('admin', { action: 'prospect_campaigns' }).catch(() => []); setCamps(d ?? []) }
+  useEffect(() => { loadStats(); loadScans(); loadCamps() }, [])
+  useEffect(() => { loadLeads() }, [f.niche, f.status, f.only_no_site, f.only_valid_whatsapp])
+
+  async function scan() {
+    if (!form.city.trim()) { setMsg('Informe a cidade.'); return }
+    setBusy('scan'); setMsg('')
+    try {
+      const r = await callFn<any>('admin', { action: 'prospect_scan', niche: form.niche, city: form.city.trim(), uf: form.uf.trim(), radius_km: form.radius_km })
+      setMsg(`Varredura concluída: ${r.found} encontrados, ${r.saved} salvos, ${r.without_site} sem site, ${r.whatsapp_valid} com WhatsApp válido.`)
+      setSub('leads'); setF(x => ({ ...x, only_no_site: true, only_valid_whatsapp: true }))
+      loadStats(); loadScans()
+    } catch (e) { setMsg((e as Error).message) }
+    setBusy('')
+  }
+
+  async function checkWa() {
+    setBusy('wa')
+    try { const r = await callFn<any>('admin', { action: 'prospect_check_whatsapp' }); setMsg(`Verificados ${r.checked} números — ${r.valid} com WhatsApp.`) }
+    catch (e) { setMsg((e as Error).message) }
+    setBusy(''); loadLeads(); loadStats()
+  }
+
+  async function saveCamp() {
+    setBusy('camp')
+    try {
+      await callFn('admin', { action: 'prospect_campaign_save', ...camp })
+      setMsg('Campanha salva.'); setCamp({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', audience: 'no_site_whatsapp' }); loadCamps()
+    } catch (e) { setMsg((e as Error).message) }
+    setBusy('')
+  }
+
+  async function launch(id: string) {
+    if (!confirm('Disparar a campanha? Os envios saem 1 a 1 pelo WhatsApp do admin, com intervalo.')) return
+    setBusy(`launch-${id}`)
+    try {
+      const r = await callFn<any>('admin', { action: 'prospect_campaign_launch', campaign_id: id, lead_ids: selected.size ? [...selected] : undefined })
+      setMsg(`${r.queued} envios na fila — o cron dispara a cada minuto.`); setSelected(new Set()); loadCamps()
+    } catch (e) { setMsg((e as Error).message) }
+    setBusy('')
+  }
+
+  async function genImg() {
+    if (imgPrompt.trim().length < 10) { setMsg('Descreva a imagem (mín. 10 caracteres).'); return }
+    setBusy('img')
+    try { const r = await callFn<any>('admin', { action: 'prospect_gen_image', prompt: imgPrompt }); setCamp(c => ({ ...c, image_url: r.url })); setImgPrompt('') }
+    catch (e) { setMsg((e as Error).message) }
+    setBusy('')
+  }
+
+  const stBadge = (s: string) => LEAD_STATUS.find(x => x.id === s) ?? LEAD_STATUS[0]
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        {[
+          ['Leads', stats?.total], ['WhatsApp ✓', stats?.valid_whatsapp], ['Sem site', stats?.without_site],
+          ['Quentes', stats?.hot], ['Contatados', stats?.contacted], ['Responderam', stats?.replied], ['Convertidos', stats?.converted],
+        ].map(([l, v]) => (
+          <div key={l as string} className="card-lux p-3 text-center">
+            <div className="font-display text-xl font-bold">{v ?? '—'}</div>
+            <div className="text-[10px] uppercase tracking-wide text-ink-muted mt-0.5">{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {msg && <div className="card-lux p-3 text-sm text-brand-700 bg-brand-50 border-brand-200">{msg}</div>}
+
+      <div className="flex gap-1 border-b border-ink/10">
+        {[['scan', 'Varredura', Search], ['leads', `Leads${leads.length ? ` (${leads.length})` : ''}`, MapPin], ['camps', 'Campanhas', Megaphone]].map(([k, l, I]: any) => (
+          <button key={k} onClick={() => setSub(k)}
+            className={clsx('px-4 py-2 text-xs font-semibold flex items-center gap-1.5 border-b-2 -mb-px transition-colors',
+              sub === k ? 'text-brand-600 border-brand-500' : 'text-ink-muted border-transparent hover:text-ink')}>
+            <I className="h-3.5 w-3.5" />{l}
+          </button>
+        ))}
+      </div>
+
+      {sub === 'scan' && (
+        <div className="grid lg:grid-cols-2 gap-5">
+          <div className="card-lux p-5 space-y-4">
+            <h3 className="font-display font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-brand-500" /> Nova varredura</h3>
+            <p className="text-xs text-ink-muted">Busca estabelecimentos de beleza em dados públicos de mapa (OpenStreetMap) — sem API paga. Depois valida quais têm WhatsApp pela instância do admin.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Nicho</label>
+                <select className="input" value={form.niche} onChange={e => setForm({ ...form, niche: e.target.value })}>
+                  <option value="todos">Todos</option>
+                  {Object.values(NICHES).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Raio (km)</label>
+                <input className="input" type="number" min={1} max={30} value={form.radius_km} onChange={e => setForm({ ...form, radius_km: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="label">Cidade</label>
+                <input className="input" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="São Paulo" />
+              </div>
+              <div>
+                <label className="label">UF</label>
+                <input className="input" maxLength={2} value={form.uf} onChange={e => setForm({ ...form, uf: e.target.value.toUpperCase() })} placeholder="SP" />
+              </div>
+            </div>
+            <button className="btn-primary w-full" onClick={scan} disabled={busy === 'scan'}>
+              {busy === 'scan' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Varrer região
+            </button>
+            {busy === 'scan' && <p className="text-[11px] text-ink-muted text-center">Buscando e validando WhatsApp — pode levar ~1 min.</p>}
+          </div>
+          <div className="card-lux p-5">
+            <h3 className="font-display font-semibold mb-3">Varreduras recentes</h3>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {scans.map(s => (
+                <div key={s.id} className="flex items-center justify-between gap-2 rounded-xl border border-ink/10 p-3 text-xs">
+                  <div>
+                    <div className="font-semibold">{s.city}{s.uf ? `/${s.uf}` : ''} · {NICHES[s.niche as keyof typeof NICHES]?.name ?? 'Todos'}</div>
+                    <div className="text-ink-muted">{new Date(s.created_at).toLocaleString('pt-BR')} · raio {(s.radius_m / 1000).toFixed(0)}km</div>
+                  </div>
+                  <div className="text-right text-[10px] text-ink-muted">
+                    <div><b className="text-ink">{s.saved}</b> leads</div>
+                    <div>{s.whatsapp_valid} WA ✓ · {s.without_site} sem site</div>
+                  </div>
+                </div>
+              ))}
+              {!scans.length && <p className="text-xs text-ink-muted">Nenhuma varredura ainda — faça a primeira ao lado.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sub === 'leads' && (
+        <div className="card-lux p-5 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="input !w-48" placeholder="Buscar nome/telefone" value={f.search}
+              onChange={e => setF({ ...f, search: e.target.value })} onKeyDown={e => e.key === 'Enter' && loadLeads()} />
+            <select className="input !w-40" value={f.niche} onChange={e => setF({ ...f, niche: e.target.value })}>
+              <option value="">Todos os nichos</option>
+              {Object.values(NICHES).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+            <select className="input !w-36" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
+              <option value="">Qualquer status</option>
+              {LEAD_STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+            <label className="flex items-center gap-1.5 text-xs text-ink-soft cursor-pointer">
+              <input type="checkbox" checked={f.only_no_site} onChange={e => setF({ ...f, only_no_site: e.target.checked })} /> sem site
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink-soft cursor-pointer">
+              <input type="checkbox" checked={f.only_valid_whatsapp} onChange={e => setF({ ...f, only_valid_whatsapp: e.target.checked })} /> WhatsApp ✓
+            </label>
+            <div className="flex-1" />
+            <button className="btn-ghost text-xs" onClick={checkWa} disabled={busy === 'wa'}>
+              {busy === 'wa' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Revalidar WhatsApp
+            </button>
+            <span className="text-[10px] text-ink-muted">{selected.size} selecionados</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-ink-muted border-b border-ink/10">
+                  <th className="p-2 w-6"><input type="checkbox" checked={selected.size === leads.length && leads.length > 0}
+                    onChange={e => setSelected(e.target.checked ? new Set(leads.map(l => l.id)) : new Set())} /></th>
+                  <th className="p-2">Estabelecimento</th><th className="p-2">Telefone</th><th className="p-2">Nicho</th>
+                  <th className="p-2">Local</th><th className="p-2">Sinais</th><th className="p-2">Status</th><th className="p-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map(l => (
+                  <tr key={l.id} className="border-b border-ink/5 hover:bg-brand-50/40">
+                    <td className="p-2"><input type="checkbox" checked={selected.has(l.id)}
+                      onChange={e => { const s = new Set(selected); if (e.target.checked) s.add(l.id); else s.delete(l.id); setSelected(s) }} /></td>
+                    <td className="p-2">
+                      <div className="font-semibold">{l.name}</div>
+                      {l.address && <div className="text-[10px] text-ink-muted">{l.address}</div>}
+                    </td>
+                    <td className="p-2 font-mono text-[11px]">{l.phone ?? '—'}</td>
+                    <td className="p-2"><span className="badge bg-brand-50 text-brand-700 text-[10px]">{NICHES[l.niche as keyof typeof NICHES]?.name ?? l.niche}</span></td>
+                    <td className="p-2 text-ink-muted">{l.city}{l.uf ? `/${l.uf}` : ''}</td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-1">
+                        {l.whatsapp_valid === true && <span className="badge bg-emerald-100 text-emerald-700 text-[9px]">WA ✓</span>}
+                        {l.whatsapp_valid === false && <PhoneOff className="h-3.5 w-3.5 text-red-400" />}
+                        {l.whatsapp_valid === null && <span className="badge bg-slate-100 text-slate-500 text-[9px]">WA?</span>}
+                        {!l.has_site && <span className="badge bg-amber-100 text-amber-700 text-[9px]">sem site</span>}
+                        {l.site_url && <a href={l.site_url.startsWith('http') ? l.site_url : `https://${l.site_url}`} target="_blank" rel="noreferrer"><Globe className="h-3.5 w-3.5 text-ink-muted hover:text-brand-600" /></a>}
+                        {l.instagram && <a href={`https://instagram.com/${String(l.instagram).replace('@', '')}`} target="_blank" rel="noreferrer" className="badge bg-pink-100 text-pink-600 text-[9px]">IG</a>}
+                        {l.facebook && <a href={`https://facebook.com/${String(l.facebook).replace('@', '')}`} target="_blank" rel="noreferrer" className="badge bg-blue-100 text-blue-600 text-[9px]">FB</a>}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <select value={l.status} className={clsx('badge text-[9px] border-0 cursor-pointer', stBadge(l.status).cls)}
+                        onChange={async e => { await callFn('admin', { action: 'prospect_lead_update', id: l.id, status: e.target.value }); loadLeads(); loadStats() }}>
+                        {LEAD_STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <button className="text-ink-muted hover:text-red-500" onClick={async () => { await callFn('admin', { action: 'prospect_lead_delete', id: l.id }); loadLeads(); loadStats() }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!leads.length && <tr><td colSpan={8} className="p-6 text-center text-ink-muted">Nenhum lead — faça uma varredura primeiro.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {selected.size > 0 && <p className="text-[11px] text-ink-muted">Dica: selecione leads e dispare uma campanha só pra eles na aba Campanhas.</p>}
+        </div>
+      )}
+
+      {sub === 'camps' && (
+        <div className="grid lg:grid-cols-2 gap-5">
+          <div className="card-lux p-5 space-y-3">
+            <h3 className="font-display font-semibold flex items-center gap-2"><Megaphone className="h-4 w-4 text-brand-500" /> Nova campanha</h3>
+            <input className="input" placeholder="Nome da campanha" value={camp.name} onChange={e => setCamp({ ...camp, name: e.target.value })} />
+            <div>
+              <textarea className="input min-h-32" value={camp.message} onChange={e => setCamp({ ...camp, message: e.target.value })} />
+              <p className="text-[10px] text-ink-muted mt-1">Variáveis: {'{nome}'} {'{cidade}'} {'{nicho}'} — quem responder entra no funil de vendas da IA do admin.</p>
+            </div>
+            <select className="input" value={camp.audience} onChange={e => setCamp({ ...camp, audience: e.target.value })}>
+              <option value="no_site_whatsapp">Sem site + WhatsApp válido (quentes)</option>
+              <option value="all_valid">Todos com WhatsApp válido</option>
+            </select>
+            {camp.image_url
+              ? <div className="relative"><img src={camp.image_url} className="rounded-xl w-full" /><button className="absolute top-2 right-2 btn-ghost !p-1.5 bg-white/80" onClick={() => setCamp({ ...camp, image_url: '' })}><X className="h-3.5 w-3.5" /></button></div>
+              : <div className="flex gap-2"><input className="input" placeholder="Descreva a arte da campanha pra gerar com IA…" value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} />
+                  <button className="btn-ghost text-xs whitespace-nowrap" onClick={genImg} disabled={busy === 'img'}>{busy === 'img' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkle className="h-3.5 w-3.5" />} Gerar</button></div>}
+            <button className="btn-primary w-full" onClick={saveCamp} disabled={!!busy}>{busy === 'camp' && <Loader2 className="h-4 w-4 animate-spin" />} Salvar campanha</button>
+          </div>
+
+          <div className="space-y-3">
+            {camps.map(c => (
+              <div key={c.id} className="card-lux p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-sm">{c.name}</div>
+                  <span className={clsx('badge text-[10px]', c.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : c.status === 'sending' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600')}>
+                    {c.status === 'sent' ? 'concluída' : c.status === 'sending' ? 'disparando' : 'rascunho'}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-muted line-clamp-2">{c.message}</p>
+                {c.image_url && <img src={c.image_url} className="rounded-lg max-h-24 object-cover" />}
+                <div className="flex items-center justify-between text-[11px] text-ink-muted">
+                  <span>{c.sent_count} enviados · {c.pending} na fila · {c.failed} falhas</span>
+                  <span>{c.audience === 'no_site_whatsapp' ? 'sem site + WA' : 'todos com WA'}</span>
+                </div>
+                {c.status !== 'sent' && (
+                  <button className="btn-primary w-full !py-2 text-xs" onClick={() => launch(c.id)} disabled={!!busy}>
+                    {busy === `launch-${c.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    Disparar{selected.size ? ` para ${selected.size} selecionados` : ' para a audiência'}
+                  </button>
+                )}
+              </div>
+            ))}
+            {!camps.length && <p className="text-xs text-ink-muted text-center py-8">Nenhuma campanha ainda.</p>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { requireAdmin, requireUser, serviceClient } from '../_shared/db.ts'
 import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText } from '../_shared/evolution.ts'
-import { chat, type ChatMessage } from '../_shared/nvidia.ts'
+import { chat, generateImage, type ChatMessage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
 
 // Painel administrativo da plataforma IAstetic
@@ -310,4 +310,123 @@ async function runAdminTool(db: any, name: string, args: any): Promise<unknown> 
     }
     default: return { erro: 'ferramenta desconhecida' }
   }
+}
+
+// ================= prospecção: helpers =================
+
+async function adminInstance(db: any): Promise<string> {
+  const { data: cfg } = await db.from('platform_settings').select('value').eq('key', 'admin_whatsapp').single()
+  const name = cfg?.value?.instance_name
+  if (!name) throw new ApiError(400, 'NO_INSTANCE', 'Conecte a instância do admin primeiro (Admin → WhatsApp do admin).')
+  return name
+}
+
+const NICHE_KEYWORDS: Record<string, RegExp> = {
+  barbearia: /barbeari|barber|barbeir/i,
+  unhas: /unha|nail|manicur|pedicur|esmalt/i,
+  olhar: /sobrancelh|c[íi]li|lash|olhar|brow/i,
+  clinica: /cl[íi]nica|est[ée]tic|laser|massag|drenag|spa/i,
+  salao: /sal[ãa]o|cabel|hair|coiffeur|beleza/i,
+}
+function guessNiche(name: string, tags: any): string {
+  const n = `${name ?? ''} ${tags?.beauty ?? ''} ${tags?.hairdresser ?? ''}`
+  for (const [niche, re] of Object.entries(NICHE_KEYWORDS)) if (re.test(n)) return niche
+  return 'salao'
+}
+
+function normPhone(raw?: string): string | null {
+  if (!raw) return null
+  let d = raw.replace(/\D/g, '')
+  if (d.startsWith('0')) d = d.slice(1)
+  if (!d.startsWith('55') && d.length >= 10 && d.length <= 11) d = '55' + d
+  return d.length >= 12 && d.length <= 13 ? d : null
+}
+
+async function runProspectScan(db: any, opts: { niche: string; city: string; uf: string; radius: number }) {
+  // 1) geocodifica a cidade (Nominatim, gratuito)
+  const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&city=${encodeURIComponent(opts.city)}${opts.uf ? `&state=${encodeURIComponent(opts.uf)}` : ''}`,
+    { headers: { 'User-Agent': 'IAstetic-prospector/1.0 (iastetic.com.br)' }, signal: AbortSignal.timeout(20_000) })
+  const places = await geo.json().catch(() => [])
+  const place = places?.[0]
+  if (!place) throw new ApiError(404, 'CITY_NOT_FOUND', `Cidade "${opts.city}" não encontrada. Confira o nome/UF.`)
+  const lat = Number(place.lat), lon = Number(place.lon)
+
+  // 2) Overpass API (OpenStreetMap, gratuito): estabelecimentos de beleza/grooming no raio
+  const query = `[out:json][timeout:40];
+(nwr["shop"~"hairdresser|beauty|massage|cosmetics"]["name"](around:${opts.radius},${lat},${lon});
+ nwr["amenity"="spa"]["name"](around:${opts.radius},${lat},${lon});
+ nwr["healthcare"="beauty"]["name"](around:${opts.radius},${lat},${lon}););
+out tags center 300;`
+  const ov = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `data=${encodeURIComponent(query)}`, signal: AbortSignal.timeout(60_000),
+  })
+  if (!ov.ok) throw new ApiError(502, 'OVERPASS_FAILED', `Fonte de dados indisponível (${ov.status}). Tente de novo em instantes.`)
+  const elements = (await ov.json())?.elements ?? []
+
+  // 3) extrai + filtra leads
+  const leads: any[] = []
+  const seen = new Set<string>()
+  for (const el of elements) {
+    const t = el.tags ?? {}
+    const name = String(t.name ?? '').trim()
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    const site = t.website ?? t['contact:website'] ?? t.url ?? null
+    const phone = normPhone(t['contact:whatsapp'] ?? t['contact:phone'] ?? t.phone ?? t['contact:mobile'])
+    const niche = guessNiche(name, t)
+    if (opts.niche !== 'todos' && niche !== opts.niche) continue
+    leads.push({
+      name: name.slice(0, 120), phone,
+      has_site: !!site, site_url: site ? String(site).slice(0, 300) : null,
+      instagram: t['contact:instagram'] ?? null,
+      facebook: t['contact:facebook'] ?? null,
+      niche, city: opts.city, uf: opts.uf || null,
+      address: [t['addr:street'], t['addr:housenumber'], t['addr:suburb'] ?? t['addr:neighbourhood'], t['addr:city']].filter(Boolean).join(', ') || null,
+      lat: el.lat ?? el.center?.lat ?? null, lon: el.lon ?? el.center?.lon ?? null,
+      source: 'osm',
+    })
+    if (leads.length >= 150) break
+  }
+
+  // 4) salva (dedup por telefone / nome+cidade)
+  let saved = 0
+  const { data: scan } = await db.from('prospect_scans').insert({
+    niche: opts.niche, city: opts.city, uf: opts.uf || null, radius_m: opts.radius, found: leads.length, saved: 0,
+  }).select().single()
+  for (const l of leads) {
+    l.scan_id = scan?.id ?? null
+    try {
+      if (l.phone) {
+        const { error } = await db.from('prospect_leads').upsert({ ...l, updated_at: new Date().toISOString() }, { onConflict: 'phone' })
+        if (!error) saved++
+      } else {
+        const { data: exists } = await db.from('prospect_leads').select('id').ilike('name', l.name).eq('city', opts.city).limit(1).maybeSingle()
+        if (!exists) { const { error } = await db.from('prospect_leads').insert(l); if (!error) saved++ }
+      }
+    } catch { /* pula duplicado */ }
+  }
+
+  // 5) valida WhatsApp em lote (se instância admin conectada)
+  let waChecked = 0, waValid = 0
+  try {
+    const inst = await adminInstance(db)
+    const withPhone = leads.filter(l => l.phone)
+    for (let i = 0; i < withPhone.length; i += 50) {
+      const chunk = withPhone.slice(i, i + 50)
+      const res = await checkWhatsAppNumbers(inst, chunk.map(l => l.phone as string))
+      const byNum = new Map(res.map(r => [r.number.slice(-9), r.exists]))
+      for (const l of chunk) {
+        const v = byNum.get(l.phone.slice(-9))
+        if (v !== undefined) {
+          await db.from('prospect_leads').update({ whatsapp_valid: v }).eq('phone', l.phone)
+          waChecked++; if (v) waValid++
+        }
+      }
+    }
+  } catch { /* instância não conectada — valida depois pelo botão */ }
+
+  const withoutSite = leads.filter(l => !l.has_site).length
+  if (scan?.id) await db.from('prospect_scans').update({ saved, whatsapp_valid: waValid, without_site: withoutSite }).eq('id', scan.id)
+  return { scan_id: scan?.id, found: leads.length, saved, whatsapp_checked: waChecked, whatsapp_valid: waValid, without_site: withoutSite, city: place.display_name?.split(',').slice(0, 3).join(',') }
 }

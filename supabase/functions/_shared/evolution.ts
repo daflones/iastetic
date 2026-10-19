@@ -76,6 +76,20 @@ export async function findProfilePicture(instanceName: string, number: string) {
   catch { return null }
 }
 
+/** Verifica em lote se números têm WhatsApp. Retorna [{number, exists, jid}] (best effort). */
+export async function checkWhatsAppNumbers(instanceName: string, numbers: string[]): Promise<{ number: string; exists: boolean; jid?: string }[]> {
+  try {
+    const res = await evo(`/chat/whatsappNumbers/${encodeURIComponent(instanceName)}`, 'POST',
+      { numbers: numbers.map(n => n.replace(/\D/g, '')) }, 60_000)
+    const arr = Array.isArray(res) ? res : res?.numbers ?? []
+    return arr.map((r: any) => ({
+      number: String(r.number ?? r.jid ?? '').replace(/\D/g, ''),
+      exists: !!(r.exists ?? r.existsOnWhatsapp ?? (r.jid && String(r.jid).includes('@'))),
+      jid: r.jid,
+    }))
+  } catch { return [] }
+}
+
 // ---------- payload do webhook ----------
 export interface IncomingMessage {
   instanceName: string

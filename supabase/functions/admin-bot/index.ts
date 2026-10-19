@@ -65,6 +65,19 @@ Deno.serve(async (req) => {
       return json({ ok: true, mode: 'support' })
     }
 
+    // lead prospectado respondeu → atualiza status/tags no painel de prospecção
+    try {
+      const { data: leads } = await db.from('prospect_leads').select('id,name,status,tags,phone').not('phone', 'is', null).limit(1000)
+      const found = (leads ?? []).find((l: { phone?: string }) => {
+        const p = (l.phone ?? '').replace(/\D/g, '')
+        return p === phone || p.endsWith(phone.slice(-9)) || phone.endsWith(p.slice(-9))
+      })
+      if (found && ['contatado', 'novo'].includes(found.status)) {
+        const tags = Array.from(new Set([...(found.tags ?? []), 'respondeu-campanha']))
+        await db.from('prospect_leads').update({ status: 'respondeu', tags, updated_at: new Date().toISOString() }).eq('id', found.id)
+      }
+    } catch { /* tabela pode não existir ainda */ }
+
     // ---------- funil de vendas ----------
     const sessKey = `bot_${phone}`
     const { data: sessRow } = await db.from('platform_settings').select('value').eq('key', sessKey).maybeSingle()

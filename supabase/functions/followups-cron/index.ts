@@ -15,14 +15,14 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
 
     if (body?.handoffs) {
-      const [escalated, campaignSent] = await Promise.all([escalateHandoffs(db), dispatchCampaignJobs(db)])
-      return json({ ok: true, escalated, campaign_sent: campaignSent })
+      const [escalated, campaignSent, prospectSent] = await Promise.all([escalateHandoffs(db), dispatchCampaignJobs(db), dispatchProspectJobs(db)])
+      return json({ ok: true, escalated, campaign_sent: campaignSent, prospect_sent: prospectSent })
     }
 
     await generateJobs(db)
     await expireUnpaidAppointments(db)
-    const [sent, campaignSent] = await Promise.all([dispatchJobs(db), dispatchCampaignJobs(db)])
-    return json({ ok: true, sent, campaign_sent: campaignSent })
+    const [sent, campaignSent, prospectSent] = await Promise.all([dispatchJobs(db), dispatchCampaignJobs(db), dispatchProspectJobs(db)])
+    return json({ ok: true, sent, campaign_sent: campaignSent, prospect_sent: prospectSent })
   } catch (e) { return errorResponse(e) }
 })
 
@@ -301,4 +301,53 @@ async function dispatchJob(db: any, job: any): Promise<boolean> {
   await db.from('followup_jobs').update({ sent_content: text }).eq('id', job.id)
   await logUsage(company.id, 'msg_customer', 'followup', { prompt_tokens: 1 })
   return true
+}
+
+// ---------- prospecção: disparos da instância do admin ----------
+async function dispatchProspectJobs(db: any): Promise<number> {
+  const { data: jobs } = await db.from('prospect_jobs')
+    .select('*, prospect_campaigns(message,image_url,status)')
+    .eq('status', 'pending').lte('scheduled_at', new Date().toISOString())
+    .order('scheduled_at').limit(10)
+  if (!jobs?.length) return 0
+  const { data: cfg } = await db.from('platform_settings').select('value').eq('key', 'admin_whatsapp').single()
+  const inst = cfg?.value?.instance_name
+  if (!inst) {
+    for (const j of jobs) await db.from('prospect_jobs').update({ status: 'failed', error: 'instância admin não conectada' }).eq('id', j.id)
+    return 0
+  }
+  let sent = 0
+  for (const job of jobs) {
+    const camp = job.prospect_campaigns
+    if (!camp || camp.status !== 'sending') { await db.from('prospect_jobs').update({ status: 'failed', error: 'campanha pausada/removida' }).eq('id', job.id); continue }
+    try {
+      const { data: lead } = await db.from('prospect_leads').select('name,city,niche').eq('id', job.lead_id).maybeSingle()
+      const msg = String(camp.message)
+        .replaceAll('{nome}', lead?.name ?? '')
+        .replaceAll('{cidade}', lead?.city ?? '')
+        .replaceAll('{nicho}', lead?.niche ?? '')
+      const jid = `${job.phone}@s.whatsapp.net`
+      if (camp.image_url) await sendMedia(inst, jid, camp.image_url, msg, 'iastetic.jpg')
+      else await sendText(inst, jid, msg)
+      await db.from('prospect_jobs').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', job.id)
+      if (lead) await db.from('prospect_leads').update({ status: 'contatado', updated_at: new Date().toISOString() })
+        .eq('id', job.lead_id).eq('status', 'novo')
+      sent++
+    } catch (e) {
+      await db.from('prospect_jobs').update({ status: 'failed', error: String((e as Error).message).slice(0, 200) }).eq('id', job.id)
+    }
+  }
+  // atualiza contadores e fecha campanhas concluídas
+  const { data: open } = await db.from('prospect_campaigns').select('id').eq('status', 'sending').limit(20)
+  for (const c of open ?? []) {
+    const [{ count: sentC }, { count: failC }, { count: pendC }] = await Promise.all([
+      db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'sent'),
+      db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'failed'),
+      db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'pending'),
+    ])
+    const patch: Record<string, unknown> = { sent_count: sentC ?? 0, failed_count: failC ?? 0 }
+    if (!pendC) { patch.status = 'sent'; patch.sent_at = new Date().toISOString() }
+    await db.from('prospect_campaigns').update(patch).eq('id', c.id)
+  }
+  return sent
 }
