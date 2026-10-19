@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, Bot, Check, Clock, Loader2, Lock, Pencil, Plus, Send, Sparkles, Trash2 } from 'lucide-react'
@@ -31,7 +31,7 @@ async function sha256(text: string): Promise<string> {
 
 export default function OnboardingPage() {
   const nav = useNavigate()
-  const { refresh } = useAuth()
+  const { refresh, company: existingCompany } = useAuth()
   const [step, setStep] = useState(0)
   const [mode, setMode] = useState<'choose' | 'manual' | 'ai'>('choose')
   const [busy, setBusy] = useState(false)
@@ -55,6 +55,11 @@ export default function OnboardingPage() {
   const chatEnd = useRef<HTMLDivElement>(null)
 
   const n = niche ? NICHES[niche] : null
+
+  // quem já tem estabelecimento não passa pelo onboarding de novo
+  useEffect(() => {
+    if (existingCompany) nav('/app', { replace: true })
+  }, [existingCompany?.id])
 
   const steps = useMemo(() => [
     { id: 'niche', title: 'Seu negócio' }, { id: 'company', title: 'Dados' }, { id: 'extra', title: 'Detalhes' },
@@ -95,6 +100,24 @@ export default function OnboardingPage() {
     professionals: professionals.map(p => p.name).filter(Boolean),
     hours, ai,
   })
+
+  /** Vai pro chat da IA carregando contexto do que já foi preenchido. */
+  function goToAI() {
+    setMode('ai')
+    if (chat.length) return // conversa já em andamento — mantém
+    const filled = niche || company.name
+    sendChat(filled
+      ? 'Oi! Já preenchi parte do cadastro manualmente — continua de onde parei e me pergunta só o que falta.'
+      : 'Oi! Quero configurar meu estabelecimento.')
+  }
+
+  /** Volta pro formulário na etapa mais útil pro que ainda falta. */
+  function goToManual() {
+    setMode('manual')
+    if (!niche) setStep(0)
+    else if (!company.name.trim()) setStep(1)
+    else setStep(3)
+  }
 
   async function sendChat(text: string) {
     const t = text.trim(); if (!t || chatBusy) return
@@ -161,7 +184,11 @@ export default function OnboardingPage() {
       await refresh()
       nav('/app/whatsapp?onboarding=1')
     } catch (e) {
-      setError((e as Error).message)
+      const msg = (e as Error).message
+      setError(msg.includes('row-level security')
+        ? 'Esta conta já tem um estabelecimento cadastrado. Entrando no painel…'
+        : msg)
+      if (msg.includes('row-level security')) setTimeout(() => { refresh(); nav('/app') }, 1200)
       setBusy(false)
     }
   }
@@ -201,7 +228,7 @@ export default function OnboardingPage() {
             <h1 className="h-display text-2xl text-center">Vamos configurar seu negócio</h1>
             <p className="text-sm text-ink-muted text-center mt-2">Duas formas de fazer isso — escolhe a sua:</p>
             <div className="mt-6 grid sm:grid-cols-2 gap-4">
-              <button onClick={() => { setMode('ai'); if (!chat.length) sendChat('Oi! Quero configurar meu estabelecimento.') }}
+              <button onClick={goToAI}
                 className="card-lux p-6 text-left border-2 border-brand-300 hover:border-brand-500 hover:-translate-y-0.5 transition-all group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-brand-50 to-accent-100/50 opacity-70" />
                 <div className="relative">
@@ -232,7 +259,7 @@ export default function OnboardingPage() {
                   <p className="text-[10px] text-ink-muted">ela preenche o formulário enquanto conversa</p>
                 </div>
               </div>
-              <button className="btn-ghost text-xs" onClick={() => setMode('manual')}><Pencil className="h-3.5 w-3.5" /> preencher manual</button>
+              <button className="btn-ghost text-xs" onClick={goToManual}><Pencil className="h-3.5 w-3.5" /> preencher manual</button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {chat.map((m, i) => (
@@ -274,7 +301,7 @@ export default function OnboardingPage() {
               className="card-lux p-6 sm:p-8 shadow-glow">
               <div className="flex items-center justify-between">
                 <h1 className="h-display text-2xl">{steps[step].title}</h1>
-                <button className="btn-ghost text-xs" onClick={() => setMode('choose')}><Bot className="h-3.5 w-3.5" /> configurar com IA</button>
+                <button className="btn-ghost text-xs" onClick={goToAI}><Bot className="h-3.5 w-3.5" /> configurar com IA</button>
               </div>
 
               {step === 0 && (
