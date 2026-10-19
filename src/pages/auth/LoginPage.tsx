@@ -59,63 +59,62 @@ const AUTH_PHRASES = [
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   const [slide, setSlide] = useState(0)
   useEffect(() => {
-    const t = setInterval(() => setSlide(s => (s + 1) % AUTH_SLIDES.length), 5200)
+    const t = setInterval(() => setSlide(s => (s + 1) % AUTH_SLIDES.length), 5600)
     return () => clearInterval(t)
   }, [])
   const current = AUTH_SLIDES[slide]
   const phrase = AUTH_PHRASES[slide % AUTH_PHRASES.length]
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-[1.05fr_1fr] mesh-bg">
-      {/* formulário */}
-      <div className="flex flex-col justify-center px-6 sm:px-12 lg:px-20 py-12 relative overflow-hidden">
-        <div className="orb bg-brand-200 h-64 w-64 -bottom-20 -left-20" />
-        <Art name="hero-textura" className="pointer-events-none absolute inset-0 w-full h-full object-cover opacity-40" />
-        <Link to="/" className="flex items-center gap-2.5 mb-10 relative">
-          <Art name="logo" className="h-9 w-9 rounded-xl object-cover shadow-soft" placeholderClass="h-9 w-9 rounded-xl" />
-          <span className="font-display text-xl font-bold">IAstetic</span>
-        </Link>
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}
-          className="w-full max-w-sm relative card-lux !bg-surface/85 backdrop-blur p-7 shadow-card">
+    <div className="min-h-screen relative overflow-hidden bg-ink flex flex-col">
+      {/* slideshow ambiental em tela cheia */}
+      <AnimatePresence mode="sync">
+        <motion.img key={current.img} src={`/imagens/${current.img}.png`} alt=""
+          initial={{ opacity: 0, scale: 1.08 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 1.6, ease: 'easeOut' }}
+          className="absolute inset-0 w-full h-full object-cover" />
+      </AnimatePresence>
+      {/* véus: escurece nas bordas, respira no centro */}
+      <div className="absolute inset-0 bg-gradient-to-b from-ink/75 via-ink/55 to-ink/85" />
+      <div className="absolute inset-0 bg-gradient-to-br from-brand-700/30 via-transparent to-accent-700/25 mix-blend-multiply" />
+      <div className="absolute inset-0 backdrop-blur-[2px]" style={{ maskImage: 'radial-gradient(ellipse 60% 50% at 50% 45%, transparent 40%, black 100%)' }} />
+
+      {/* conteúdo central */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-10">
+        <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          className="flex items-center gap-2.5 mb-7">
+          <Link to="/" className="flex items-center gap-2.5">
+            <span className="h-11 w-11 rounded-2xl bg-white/10 backdrop-blur ring-1 ring-white/25 grid place-items-center shadow-glow overflow-hidden">
+              <Art name="logo" className="h-8 w-8 rounded-xl object-cover" placeholderClass="h-8 w-8 rounded-xl" />
+            </span>
+            <span className="font-display text-2xl font-bold text-white drop-shadow">IAstetic</span>
+          </Link>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: 'easeOut', delay: 0.08 }}
+          className="w-full max-w-sm card-lux !bg-surface/90 backdrop-blur-2xl ring-1 ring-white/40 rounded-3xl p-8 shadow-glow">
           <h1 className="h-display text-3xl">{title}</h1>
           <p className="text-ink-muted mt-2 text-sm">{subtitle}</p>
           <div className="mt-7">{children}</div>
         </motion.div>
-      </div>
 
-      {/* slideshow de nichos */}
-      <div className="hidden lg:block relative overflow-hidden">
-        <AnimatePresence mode="sync">
-          <motion.img key={current.img} src={`/imagens/${current.img}.png`} alt={current.niche.name}
-            initial={{ opacity: 0, scale: 1.06 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 1.1, ease: 'easeOut' }}
-            className="absolute inset-0 w-full h-full object-cover" />
-        </AnimatePresence>
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/30 to-ink/20" />
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-600/25 to-transparent mix-blend-multiply" />
-
-        {/* topo: marca */}
-        <div className="absolute top-8 right-10 flex items-center gap-2 text-white/90">
-          <Sparkles className="h-4 w-4" />
-          <span className="text-xs uppercase tracking-[0.2em] font-medium">IAstetic</span>
-        </div>
-
-        {/* rodapé: frase rotativa + nicho + dots */}
-        <div className="absolute inset-x-0 bottom-0 p-10 text-white">
+        {/* frase rotativa sob o card */}
+        <div className="mt-8 text-center px-4 max-w-md">
           <AnimatePresence mode="wait">
             <motion.div key={slide}
-              initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.45 }}>
-              <span className="badge bg-white/15 backdrop-blur text-white text-[11px] ring-1 ring-white/25 mb-4 inline-flex">
-                Feito para {current.niche.name}
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.4 }}>
+              <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-white/60 font-medium mb-2">
+                <Sparkles className="h-3 w-3" /> Feito para {current.niche.name}
               </span>
-              <h2 className="font-display text-3xl font-semibold leading-tight max-w-md drop-shadow-md">{phrase}</h2>
+              <p className="font-display text-lg text-white/90 leading-snug drop-shadow-sm">{phrase}</p>
             </motion.div>
           </AnimatePresence>
-          <div className="flex gap-1.5 mt-6">
+          <div className="flex gap-1.5 mt-4 justify-center">
             {AUTH_SLIDES.map((s, i) => (
               <button key={s.niche.id} onClick={() => setSlide(i)} aria-label={s.niche.name}
-                className={clsx('h-1.5 rounded-full transition-all', i === slide ? 'w-8 bg-white' : 'w-3 bg-white/40 hover:bg-white/60')} />
+                className={clsx('h-1.5 rounded-full transition-all', i === slide ? 'w-7 bg-white' : 'w-2.5 bg-white/35 hover:bg-white/60')} />
             ))}
           </div>
         </div>
