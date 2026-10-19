@@ -348,7 +348,7 @@ function PayModal({ plan, period, companyId, onClose }: { plan: Plan; period: 'm
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="rounded-2xl border border-line bg-white p-4"><QRCodeSVG value={pix.qr} size={200} /></div>
-            <p className="font-display font-bold text-xl">{brl(plan.price_cents)}</p>
+            <p className="font-display font-bold text-xl">{brl(amount)}</p>
             <textarea readOnly className="input text-[10px] h-20 font-mono" value={pix.qr} onClick={e => (e.target as HTMLTextAreaElement).select()} />
             <p className="text-xs text-ink-muted">Pague no app do banco — seu plano ativa automaticamente.</p>
             <button className="btn-outline w-full" onClick={onClose}>Fechar</button>
