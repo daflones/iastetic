@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
         if (!name) return json({ ok: true, data: { instance: null } })
         let state: any = null
         try { state = await connectionState(name) } catch { /* instância removida */ }
-        return json({ ok: true, data: { instance: { name, phone: cfg.value.phone ?? null, state: state?.instance?.state ?? state?.state ?? 'unknown' } } })
+        return json({ ok: true, data: { instance: { name, phone: cfg.value.phone ?? null, paused: !!cfg.value.paused, state: state?.instance?.state ?? state?.state ?? 'unknown' } } })
       }
 
       case 'admin_instance_create': {
@@ -151,6 +151,18 @@ Deno.serve(async (req) => {
         if (!cfg?.value?.instance_name) throw new ApiError(404, 'NO_INSTANCE', 'Instância não criada.')
         const conn = await connectInstance(cfg.value.instance_name)
         return json({ ok: true, data: conn })
+      }
+
+      // pausa/despausa o bot: desliga o webhook na Evolution (mensagens param de chegar)
+      case 'admin_instance_toggle': {
+        const { data: cfg } = await db.from('platform_settings').select('value').eq('key', 'admin_whatsapp').single()
+        const name = cfg?.value?.instance_name
+        if (!name) throw new ApiError(404, 'NO_INSTANCE', 'Instância não criada.')
+        const paused = !cfg.value.paused
+        const hookUrl = `https://${req.headers.get('host') ?? ''}/functions/v1/admin-bot`
+        await setWebhook(name, hookUrl, (await getSecret('WEBHOOK_INGRESS_SECRET')) ?? undefined, !paused)
+        await db.from('platform_settings').upsert({ key: 'admin_whatsapp', value: { ...cfg.value, paused } })
+        return json({ ok: true, data: { paused } })
       }
 
       case 'admin_instance_logout': {

@@ -27,10 +27,10 @@ export async function createInstance(name: string, number?: string) {
     webhook: undefined,
   })
 }
-export async function setWebhook(instanceName: string, url: string, secret?: string) {
+export async function setWebhook(instanceName: string, url: string, secret?: string, enabled = true) {
   return evo(`/webhook/set/${encodeURIComponent(instanceName)}`, 'POST', {
     webhook: {
-      enabled: true,
+      enabled,
       url,
       webhookByEvents: false,
       webhookBase64: true,

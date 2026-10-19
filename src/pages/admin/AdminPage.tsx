@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, QrCode, MessageSquareText, Send, Users, Sparkle,
   CalendarDays, Wallet, ChevronRight, Power, BrainCircuit, KeyRound, Crown, Plus, Pencil,
   LayoutDashboard, TrendingUp, TrendingDown, Menu, Activity, Mic, Square, Bot, Image, Volume2,
-  Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2, LifeBuoy,
+  Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2, LifeBuoy, Pause, Play,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -662,6 +662,13 @@ function AdminWhatsappCard() {
     setQr(r?.qrcode?.base64 ?? r?.base64 ?? r?.code ?? '')
     setBusy(false)
   }
+  async function togglePause() {
+    setBusy(true)
+    const r = await callFn<any>('admin', { action: 'admin_instance_toggle' }).catch(() => null)
+    if (r) setInst((i: any) => i ? { ...i, paused: r.paused } : i)
+    else await refresh()
+    setBusy(false)
+  }
 
   const connected = inst?.state === 'open' || inst?.state === 'connected'
 
@@ -672,14 +679,20 @@ function AdminWhatsappCard() {
       {loading ? <Loader2 className="h-5 w-5 animate-spin text-brand-500" /> : (
         <>
           <div className="flex items-center gap-3 rounded-xl bg-canvas p-3.5">
-            <span className={clsx('h-2.5 w-2.5 rounded-full', connected ? 'bg-emerald-500 anim-pulse-dot' : inst ? 'bg-amber-500' : 'bg-slate-300')} />
+            <span className={clsx('h-2.5 w-2.5 rounded-full', inst?.paused ? 'bg-red-400' : connected ? 'bg-emerald-500 anim-pulse-dot' : inst ? 'bg-amber-500' : 'bg-slate-300')} />
             <div className="text-sm">
-              {!inst ? 'Nenhuma instância criada' : connected ? `Conectada — ${inst.phone ?? inst.name}` : `Criada, aguardando conexão (${inst.state})`}
+              {!inst ? 'Nenhuma instância criada' : inst.paused ? `IA pausada — ${inst.phone ?? inst.name} (não responde mensagens)` : connected ? `Conectada — ${inst.phone ?? inst.name}` : `Criada, aguardando conexão (${inst.state})`}
             </div>
           </div>
           <div className="flex gap-2">
             {!inst && <button className="btn-primary" onClick={create} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />} Criar instância</button>}
             {inst && !connected && <button className="btn-primary" onClick={getQr} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />} Gerar QR Code</button>}
+            {inst && (
+              <button className={clsx('text-xs', inst.paused ? 'btn-primary' : 'btn-outline')} onClick={togglePause} disabled={busy}
+                title={inst.paused ? 'Religa o webhook — a IA volta a responder' : 'Desliga o webhook na Evolution — a IA para de responder'}>
+                {inst.paused ? <><Play className="h-3.5 w-3.5" /> Ativar IA</> : <><Pause className="h-3.5 w-3.5" /> Pausar IA</>}
+              </button>
+            )}
             {inst && <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'admin_instance_logout' }); refresh() }}>Desconectar</button>}
             <button className="btn-outline text-xs" onClick={refresh}><RefreshCw className="h-3.5 w-3.5" /></button>
           </div>
