@@ -123,22 +123,22 @@ export default function LandingPage() {
 
       {/* Niche strip */}
       <section className="border-y border-line/60 bg-surface/60 backdrop-blur">
-        <div className="container py-8 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="container py-6 sm:py-8 grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           {NICHE_LIST.map((x, i) => (
             <motion.button key={x.id} onClick={() => setNiche(x.id)}
               initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
               whileHover={{ y: -3 }}
-              className={clsx('text-left rounded-2xl border transition-all relative overflow-hidden group/card',
+              className={clsx('text-left rounded-2xl border transition-all relative overflow-hidden group/card flex sm:block items-stretch',
                 niche === x.id ? 'border-brand-400 bg-brand-50 shadow-glow' : 'border-line bg-surface/80 hover:border-brand-200 hover:shadow-card')}>
               {niche === x.id && <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-brand-400 via-accent-500 to-brand-400 z-10" />}
-              <div className="relative h-24 overflow-hidden">
+              <div className="relative w-20 sm:w-full sm:h-24 shrink-0 overflow-hidden">
                 <Art name={`niche-${x.id}`} alt={x.name}
                   className={clsx('w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105', niche !== x.id && 'opacity-80 saturate-[.85]')}
                   placeholderClass="w-full h-full" />
               </div>
-              <div className="p-4">
+              <div className="p-3 sm:p-4">
                 <p className="font-semibold text-sm">{x.name}</p>
-                <p className="text-[11px] text-ink-muted mt-1 leading-snug">{x.tagline}</p>
+                <p className="text-[11px] text-ink-muted mt-1 leading-snug line-clamp-2">{x.tagline}</p>
               </div>
             </motion.button>
           ))}
@@ -146,10 +146,10 @@ export default function LandingPage() {
       </section>
 
       {/* Como funciona */}
-      <section className="container py-16">
+      <section className="container py-10 sm:py-16">
         <h2 className="h-display text-3xl sm:text-4xl text-center">Funciona em <span className="gradient-text">3 passos</span></h2>
         <p className="text-center text-ink-muted mt-3">Do QR Code à agenda cheia — sem instalar nada, sem trocar de número.</p>
-        <div className="mt-12 grid sm:grid-cols-3 gap-6">
+        <div className="mt-8 sm:mt-12 grid sm:grid-cols-3 gap-4 sm:gap-6">
           {[
             { img: 'passo-1', step: '01', title: 'Conecta o WhatsApp', text: 'Escaneia um QR Code como o WhatsApp Web. Suas conversas continuam no seu aparelho.' },
             { img: 'passo-2', step: '02', title: 'A IA aprende seu negócio', text: 'Prefere não preencher nada? Uma assistente conversa com você e configura serviços, equipe, horários e regras sozinha. Ou cadastre manualmente em 3 min.' },
@@ -159,7 +159,7 @@ export default function LandingPage() {
               initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }}
               transition={{ delay: i * 0.12, duration: 0.5 }}
               className="card-lux overflow-hidden group">
-              <div className="relative h-44 bg-gradient-to-br from-brand-50 to-accent-100 overflow-hidden">
+              <div className="relative h-32 sm:h-44 bg-gradient-to-br from-brand-50 to-accent-100 overflow-hidden">
                 <Art name={s.img} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" placeholderClass="w-full h-full" />
                 <span className="absolute top-3 left-3 font-display font-bold text-brand-600/30 text-2xl">{s.step}</span>
               </div>
@@ -173,15 +173,15 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section id="funcoes" className="container py-20">
+      <section id="funcoes" className="container py-10 sm:py-20">
         <h2 className="h-display text-3xl sm:text-4xl text-center">Tudo que uma <span className="gradient-text">super recepcionista</span> faria</h2>
         <p className="text-center text-ink-muted mt-3 max-w-2xl mx-auto">E mais um pouco. Configurada para o seu nicho, com as suas regras.</p>
-        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="mt-8 sm:mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5">
           {FEATURES.map((f, i) => (
             <motion.div key={f.title}
               initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ delay: (i % 3) * 0.08, duration: 0.45 }}
               whileHover={{ y: -4 }}
-              className="card-lux p-6 hover:shadow-glow transition-shadow group">
+              className="card-lux p-5 sm:p-6 hover:shadow-glow transition-shadow group">
               <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-brand-100 to-accent-100 grid place-items-center ring-1 ring-brand-200 group-hover:scale-110 transition-transform">
                 <f.icon className="h-5 w-5 text-brand-600" />
               </div>
@@ -191,7 +191,7 @@ export default function LandingPage() {
           ))}
         </div>
         {/* niche benefits */}
-        <div className="mt-12 rounded-3xl bg-gradient-to-br from-brand-600 to-accent-700 text-white p-8 sm:p-10 relative overflow-hidden">
+        <div className="mt-8 sm:mt-12 rounded-3xl bg-gradient-to-br from-brand-600 to-accent-700 text-white p-6 sm:p-10 relative overflow-hidden">
           <div className="absolute inset-0 texture-grid opacity-30" />
           <div className="orb bg-white/20 h-48 w-48 -top-10 -right-10" />
           <div className="relative flex items-center gap-4">
@@ -211,7 +211,7 @@ export default function LandingPage() {
 
       {/* Pricing */}
       <section id="planos" className="border-t border-line bg-surface/60">
-        <div className="container py-20">
+        <div className="container py-12 sm:py-20">
           <h2 className="h-display text-3xl sm:text-4xl text-center">Planos que cabem no seu <span className="gradient-text">negócio</span></h2>
           <p className="text-center text-ink-muted mt-3">Pague no Pix (MercosulPay) ou cartão (Stripe). Saldo da carteira também paga a mensalidade.</p>
           <div className="mt-6 flex justify-center">
@@ -232,7 +232,7 @@ export default function LandingPage() {
               <motion.div key={p.id}
                 initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ delay: i * 0.1, duration: 0.45 }}
                 whileHover={{ y: -4 }}
-                className={clsx('card-lux p-7 flex flex-col relative', p.highlight && 'border-brand-400 ring-2 ring-brand-400/60 shadow-glow md:-translate-y-2')}>
+                className={clsx('card-lux p-5 sm:p-7 flex flex-col relative', p.highlight && 'border-brand-400 ring-2 ring-brand-400/60 shadow-glow md:-translate-y-2')}>
                 {p.highlight && <span className="badge bg-gradient-to-r from-brand-500 to-accent-500 text-white absolute -top-3 left-1/2 -translate-x-1/2 shadow-soft"><Sparkles className="h-3 w-3" /> Mais escolhido</span>}
                 <h3 className="font-display text-xl font-semibold">{p.name}</h3>
                 <p className="text-sm text-ink-muted mt-1 min-h-[40px]">{p.description}</p>
@@ -267,11 +267,11 @@ export default function LandingPage() {
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="container py-20 max-w-3xl">
+      <section id="faq" className="container py-12 sm:py-20 max-w-3xl">
         <h2 className="h-display text-3xl text-center">Perguntas frequentes</h2>
-        <div className="mt-10 space-y-3">
+        <div className="mt-6 sm:mt-10 space-y-3">
           {FAQS.map(f => (
-            <details key={f.q} className="card-lux p-5 group">
+            <details key={f.q} className="card-lux p-4 sm:p-5 group">
               <summary className="cursor-pointer font-semibold list-none flex justify-between items-center">
                 {f.q}
                 <ArrowRight className="h-4 w-4 text-brand-500 transition-transform group-open:rotate-90" />
@@ -284,8 +284,8 @@ export default function LandingPage() {
       </section>
 
       {/* CTA final */}
-      <section className="container pb-20">
-        <div className="rounded-3xl text-white p-10 sm:p-14 text-center relative overflow-hidden">
+      <section className="container pb-12 sm:pb-20">
+        <div className="rounded-3xl text-white p-7 sm:p-14 text-center relative overflow-hidden">
           <Art name="cta-fundo" className="absolute inset-0 w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-r from-brand-700/85 via-brand-600/80 to-accent-700/85" />
           <div className="absolute inset-0 texture-dots opacity-20" />
@@ -354,10 +354,10 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
   }
 
   return (
-    <div className="card-lux overflow-hidden shadow-glow ring-1 ring-brand-200/60">
+    <div className="card-lux overflow-hidden shadow-glow ring-1 ring-brand-200/60 flex flex-col h-[76dvh] max-h-[640px] sm:h-auto sm:max-h-none">
       {/* phone header */}
-      <div className="bg-gradient-to-r from-brand-600 to-accent-700 text-white px-5 py-3.5 flex items-center gap-3">
-        <NicheArt id={niche} className="h-9 w-9 rounded-full ring-1 ring-white/30" />
+      <div className="bg-gradient-to-r from-brand-600 to-accent-700 text-white px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 sm:gap-3 shrink-0">
+        <NicheArt id={niche} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full ring-1 ring-white/30" />
         <div className="flex-1 leading-tight">
           <p className="font-semibold text-sm">Recepção {n.short} (demo)</p>
           <p className="text-[11px] text-white/75 flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300 inline-block" /> online agora</p>
@@ -365,7 +365,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         <span className="badge bg-white/15 text-white text-[10px]">TESTE AO VIVO</span>
       </div>
       {/* niche switch */}
-      <div className="px-4 pt-3 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+      <div className="px-3 sm:px-4 pt-2.5 sm:pt-3 pb-1 flex gap-2 overflow-x-auto shrink-0" style={{ scrollbarWidth: 'none' }}>
         {NICHE_LIST.map(x => (
           <button key={x.id} onClick={() => onNicheChange(x.id)}
             className={clsx('text-xs rounded-full px-3 py-1.5 font-medium transition inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap',
@@ -375,7 +375,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         ))}
       </div>
       {/* messages */}
-      <div ref={boxRef} className="h-[280px] sm:h-[340px] overflow-y-auto px-4 py-4 space-y-2.5 bg-canvas/60">
+      <div ref={boxRef} className="flex-1 min-h-0 sm:flex-none sm:h-[340px] overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-2.5 bg-canvas/60 overscroll-contain">
         {msgs.map((m, i) => (
           <div key={i} className={clsx('max-w-[82%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed animate-fade-up whitespace-pre-wrap',
             m.role === 'user' ? 'ml-auto bg-brand-500 text-white rounded-br-sm' : 'bg-surface border border-line rounded-bl-sm')}>
@@ -395,7 +395,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         )}
       </div>
       {/* input */}
-      <div className="p-3 border-t border-line flex gap-2 bg-surface">
+      <div className="p-2.5 sm:p-3 border-t border-line flex gap-2 bg-surface shrink-0">
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
           placeholder="Digite como se fosse uma cliente…" className="input !rounded-full text-sm" disabled={done} />
         <button onClick={() => send()} disabled={busy || done} className="btn-primary !rounded-full h-10 w-10 !p-0 shrink-0">
@@ -403,7 +403,7 @@ function LiveDemo({ niche, onNicheChange }: { niche: NicheId; onNicheChange: (n:
         </button>
       </div>
       {/* sugestões */}
-      <div className="px-3 pb-3 flex flex-wrap gap-1.5 bg-surface">
+      <div className="px-3 pb-2.5 sm:pb-3 flex flex-wrap gap-1.5 bg-surface shrink-0">
         {n.demoScript.map(s => s.from === 'client' ? s.text : '').filter(Boolean).map(t => (
           <button key={t} onClick={() => send(t)} disabled={busy || done}
             className="text-[11px] rounded-full border border-line px-2.5 py-1 text-ink-soft hover:border-brand-300 hover:text-brand-600 transition disabled:opacity-40">
