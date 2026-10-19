@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Check, Copy, Download, Image as ImageIcon, Megaphone, Trash2, X } from 'lucide-react'
 import { supabase, fmtDate } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import PostPreview from '@/components/ui/PostPreview'
 import clsx from 'clsx'
 
@@ -45,6 +46,8 @@ export default function SocialPage() {
 
   const unusedCount = posts.filter(p => !p.used).length
 
+  const pg = usePaged(filtered, 24, [platform, usedFilter])
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -75,7 +78,7 @@ export default function SocialPage() {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((p, i) => (
+          {pg.slice.map((p, i) => (
             <motion.div key={p.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.4) }}
               className={clsx('card-lux overflow-hidden group', p.used && 'opacity-70')}>
               <button onClick={() => setViewing(p)} className="block w-full text-left relative">
@@ -107,6 +110,7 @@ export default function SocialPage() {
           ))}
         </div>
       )}
+      {filtered.length > 0 && <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />}
 
       {viewing && <PostModal post={viewing} biz={company} onToggle={toggleUsed} onClose={() => { setViewing(null); load() }} />}
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, Check, CreditCard, Loader2, Wallet, X } from 'lucide-react'
 import { supabase, callFn, brl, fmtDateTime } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import type { WalletEntry } from '@/lib/types'
 import { QRCodeSVG } from 'qrcode.react'
 import clsx from 'clsx'
@@ -10,6 +11,7 @@ export default function WalletPage() {
   const { company } = useAuth()
   const [wallet, setWallet] = useState<any>(null)
   const [entries, setEntries] = useState<WalletEntry[]>([])
+  const pg = usePaged(entries, 15)
   const [depositModal, setDepositModal] = useState(false)
   const [withdrawModal, setWithdrawModal] = useState(false)
 
@@ -60,7 +62,7 @@ export default function WalletPage() {
       <div className="card-lux overflow-hidden">
         <div className="px-5 py-4 border-b border-line"><h3 className="font-semibold text-sm">Extrato</h3></div>
         <div className="divide-y divide-line/60">
-          {entries.map(e => (
+          {pg.slice.map(e => (
             <div key={e.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{entryLabel(e.kind, e.description)}</p>
@@ -72,6 +74,7 @@ export default function WalletPage() {
             </div>
           ))}
           {entries.length === 0 && <p className="px-5 py-10 text-center text-sm text-ink-muted">Sem movimentações ainda.</p>}
+          <div className="px-4 pb-4"><Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} /></div>
         </div>
       </div>
 

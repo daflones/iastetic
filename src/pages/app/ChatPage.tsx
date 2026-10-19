@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Bot, Hand, Loader2, Lock, MessageCircle, Search, Send, User, Volume2, Image as ImageIcon, Paperclip, Archive, ArchiveRestore, X, Bell, PanelRight } from 'lucide-react'
 import { supabase, callFn, fmtPhone, fmtTime, fmtDate, brl } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import { STAGES, stageInfo } from './ContactsPage'
 import type { Conversation, Message } from '@/lib/types'
@@ -121,6 +122,7 @@ export default function ChatPage() {
     if (filter === 'human') return c.mode === 'human'
     return true
   })
+  const pg = usePaged(filtered, 15, [search, stageFilter, filter, showClosed])
   const attentionCount = convs.filter(needsAttention).length
 
   return (
@@ -161,7 +163,7 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {filtered.map(c => {
+          {pg.slice.map(c => {
             const contact = c.contacts
             return (
               <button key={c.id} onClick={() => open(c)}
@@ -198,6 +200,7 @@ export default function ChatPage() {
             )
           })}
           {filtered.length === 0 && <p className="text-xs text-ink-muted text-center py-10">Nenhuma conversa {showClosed ? 'arquivada' : 'aberta'} ainda.<br />Quando clientes falarem no WhatsApp, aparecem aqui.</p>}
+          <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} className="py-2" />
         </div>
       </div>
 

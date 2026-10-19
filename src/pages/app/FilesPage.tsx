@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, FileImage, Link2, Lock, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import type { CompanyFile } from '@/lib/types'
 import clsx from 'clsx'
@@ -16,6 +17,8 @@ export default function FilesPage() {
     const { data } = await supabase.from('company_files').select('*').eq('company_id', company!.id).order('created_at', { ascending: false })
     setItems((data as CompanyFile[]) ?? [])
   }
+
+  const pg = usePaged(items, 24)
 
   if (!loading && company && !features.images) {
     return (
@@ -41,7 +44,7 @@ export default function FilesPage() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {items.map(f => (
+        {pg.slice.map(f => (
           <div key={f.id} className="card-lux overflow-hidden group">
             {f.kind === 'image' ? (
               <div className="h-36 bg-canvas grid place-items-center overflow-hidden">
@@ -71,6 +74,7 @@ export default function FilesPage() {
           </div>
         ))}
       </div>
+      <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />
       {items.length === 0 && <p className="card-lux p-10 text-center text-sm text-ink-muted">Nada aqui ainda. Cadastre fotos do seu trabalho ou links úteis — a IA usa quando o cliente pedir.</p>}
 
       {editing && <FileModal file={editing} companyId={company!.id} onClose={r => { setEditing(null); if (r) load() }} />}

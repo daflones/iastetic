@@ -12,7 +12,9 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, CartesianGrid,
 } from 'recharts'
-import { callFn, brl, fmtDate } from '@/lib/supabase'
+import { callFn, brl, fmtDate, supabase } from '@/lib/supabase'
+import { maskPhoneBR } from '@/lib/validators'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useAuth } from '@/hooks/useAuth'
 import { NICHES } from '@/lib/niches'
 import NicheArt from '@/components/ui/NicheArt'
@@ -84,6 +86,8 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false)
   const [detail, setDetail] = useState<any>(null)
   const [navOpen, setNavOpen] = useState(false)
+  const pgComp = usePaged(companies, 15)
+  const pgPay = usePaged(payments, 15)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -376,7 +380,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/60">
-                      {companies.map(c => (
+                      {pgComp.slice.map(c => (
                         <tr key={c.id} className="hover:bg-brand-50/40 cursor-pointer transition" onClick={() => openCompany(c.id)}>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-3">
@@ -399,6 +403,7 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                   {companies.length === 0 && <p className="px-5 py-10 text-center text-sm text-ink-muted">Nenhuma empresa ainda.</p>}
+                  <div className="px-5 pb-4"><Pagination page={pgComp.page} pages={pgComp.pages} total={pgComp.total} onChange={pgComp.setPage} /></div>
                 </div>
               </div>
             </>
@@ -413,7 +418,7 @@ export default function AdminPage() {
               </div>
               <div className="card-lux overflow-hidden">
                 <div className="divide-y divide-line/60">
-                  {payments.map(p => (
+                  {pgPay.slice.map(p => (
                     <div key={p.id} className="px-5 py-3.5 flex items-center gap-4 text-sm">
                       <span className={clsx('badge text-[10px]', p.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700')}>{p.status}</span>
                       <div className="flex-1 min-w-0">
@@ -424,6 +429,7 @@ export default function AdminPage() {
                     </div>
                   ))}
                   {payments.length === 0 && <p className="px-5 py-10 text-center text-sm text-ink-muted">Sem pagamentos.</p>}
+                  <div className="px-5 pb-4"><Pagination page={pgPay.page} pages={pgPay.pages} total={pgPay.total} onChange={pgPay.setPage} /></div>
                 </div>
               </div>
             </>
@@ -892,27 +898,59 @@ function SecretsCard() {
 function FeesCard() {
   const [pct, setPct] = useState(5)
   const [minCents, setMinCents] = useState(1000)
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [support, setSupport] = useState({ phone: '', name: 'Eduardo Daflon', photo: '' })
+  const [busy, setBusy] = useState('')
+  const [saved, setSaved] = useState('')
+
+  useEffect(() => {
+    supabase.from('platform_settings').select('value').eq('key', 'support_whatsapp').maybeSingle()
+      .then(({ data }) => { if (data?.value) setSupport({ phone: '', name: 'Eduardo Daflon', photo: '', ...data.value }) })
+  }, [])
 
   async function save() {
-    setBusy(true)
+    setBusy('fees')
     await callFn('admin', { action: 'update_fees', withdrawal_percent: pct, min_withdrawal_cents: minCents })
-    setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
+    setBusy(''); setSaved('fees'); setTimeout(() => setSaved(''), 2500)
+  }
+  async function saveSupport() {
+    setBusy('support')
+    await callFn('admin', { action: 'update_settings', key: 'support_whatsapp', value: { ...support, role: 'Desenvolvedor da plataforma' } })
+    setBusy(''); setSaved('support'); setTimeout(() => setSaved(''), 2500)
   }
 
   return (
-    <div className="card-lux p-6 max-w-md space-y-4">
-      <h3 className="font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4 text-brand-500" /> Taxas da plataforma</h3>
-      <div>
-        <label className="label">Taxa de saque (%)</label>
-        <input type="number" min={0} max={30} step={0.5} className="input" value={pct} onChange={e => setPct(+e.target.value)} />
+    <div className="grid sm:grid-cols-2 gap-5 max-w-3xl">
+      <div className="card-lux p-6 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4 text-brand-500" /> Taxas da plataforma</h3>
+        <div>
+          <label className="label">Taxa de saque (%)</label>
+          <input type="number" min={0} max={30} step={0.5} className="input" value={pct} onChange={e => setPct(+e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Saque mínimo (centavos)</label>
+          <input type="number" min={100} step={100} className="input" value={minCents} onChange={e => setMinCents(+e.target.value)} />
+        </div>
+        <button className="btn-primary" onClick={save} disabled={busy === 'fees'}>{busy === 'fees' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{saved === 'fees' ? 'Salvo ✓' : 'Salvar'}</button>
       </div>
-      <div>
-        <label className="label">Saque mínimo (centavos)</label>
-        <input type="number" min={100} step={100} className="input" value={minCents} onChange={e => setMinCents(+e.target.value)} />
+
+      <div className="card-lux p-6 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><LifeBuoy className="h-4 w-4 text-brand-500" /> Contato de suporte</h3>
+        <p className="text-[11px] text-ink-muted">Aparece na landing ("fale comigo") e na página de Suporte das empresas — botão que abre o WhatsApp direto.</p>
+        <div>
+          <label className="label">Nome exibido</label>
+          <input className="input" value={support.name} onChange={e => setSupport({ ...support, name: e.target.value })} placeholder="Eduardo Daflon" />
+        </div>
+        <div>
+          <label className="label">WhatsApp (com DDD)</label>
+          <input className="input" inputMode="numeric" value={maskPhoneBR((support.phone || '').replace(/^55/, ''))}
+            onChange={e => setSupport({ ...support, phone: '55' + e.target.value.replace(/\D/g, '').slice(0, 11) })} placeholder="(22) 99999-9999" />
+        </div>
+        <div>
+          <label className="label">Foto (URL, opcional)</label>
+          <input className="input" value={support.photo} onChange={e => setSupport({ ...support, photo: e.target.value })} placeholder="https://…/foto.jpg — vazio mostra iniciais" />
+        </div>
+        <button className="btn-primary" onClick={saveSupport} disabled={busy === 'support'}>{busy === 'support' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{saved === 'support' ? 'Salvo ✓' : 'Salvar'}</button>
       </div>
-      <button className="btn-primary" onClick={save} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{saved ? 'Salvo ✓' : 'Salvar'}</button>
     </div>
   )
 }
@@ -1070,6 +1108,7 @@ function ProspectCard() {
   const [msg, setMsg] = useState('')
   const [form, setForm] = useState({ niche: 'todos', city: '', uf: '', radius_km: 5 })
   const [f, setF] = useState({ only_no_site: false, only_valid_whatsapp: false, niche: '', status: '', search: '' })
+  const pgLeads = usePaged(leads, 15, [f.niche, f.status, f.only_no_site, f.only_valid_whatsapp, f.search])
   const [camp, setCamp] = useState({ name: '', message: DEFAULT_PROSPECT_MSG, image_url: '', image_prompt: '', audience: 'no_site_whatsapp', interval_sec: 45, vary_messages: true })
   const [imgPrompt, setImgPrompt] = useState('')
   const [imgEdit, setImgEdit] = useState(false)
@@ -1253,7 +1292,7 @@ function ProspectCard() {
                 </tr>
               </thead>
               <tbody>
-                {leads.map(l => (
+                {pgLeads.slice.map(l => (
                   <tr key={l.id} className="border-b border-ink/5 hover:bg-brand-50/40">
                     <td className="p-2"><input type="checkbox" checked={selected.has(l.id)}
                       onChange={e => { const s = new Set(selected); if (e.target.checked) s.add(l.id); else s.delete(l.id); setSelected(s) }} /></td>
@@ -1291,6 +1330,7 @@ function ProspectCard() {
                 {!leads.length && <tr><td colSpan={8} className="p-6 text-center text-ink-muted">Nenhum lead — faça uma varredura primeiro.</td></tr>}
               </tbody>
             </table>
+            <Pagination page={pgLeads.page} pages={pgLeads.pages} total={pgLeads.total} onChange={pgLeads.setPage} className="pb-3" />
           </div>
           {selected.size > 0 && <p className="text-[11px] text-ink-muted">Dica: selecione leads e dispare uma campanha só pra eles na aba Campanhas.</p>}
         </div>
@@ -1390,6 +1430,7 @@ function SupportCard() {
   const [tickets, setTickets] = useState<any[]>([])
   const [openCount, setOpenCount] = useState(0)
   const [filter, setFilter] = useState('')
+  const pgTk = usePaged(tickets, 12, [filter])
   const [detail, setDetail] = useState<any>(null)
   const [reply, setReply] = useState('')
   const [busy, setBusy] = useState('')
@@ -1433,7 +1474,7 @@ function SupportCard() {
           </select>
         </div>
         <div className="space-y-2 max-h-[65vh] overflow-y-auto">
-          {tickets.map(t => (
+          {pgTk.slice.map(t => (
             <button key={t.id} onClick={() => openTicket(t.id)}
               className={clsx('card-lux p-3.5 w-full text-left transition', detail?.ticket?.id === t.id && 'ring-2 ring-brand-400')}>
               <div className="flex items-center justify-between gap-2">
@@ -1447,6 +1488,7 @@ function SupportCard() {
             </button>
           ))}
           {!tickets.length && <p className="card-lux p-8 text-center text-xs text-ink-muted">Nenhum chamado{filter ? ' com esse status' : ''} — tudo em dia.</p>}
+          <Pagination page={pgTk.page} pages={pgTk.pages} total={pgTk.total} onChange={pgTk.setPage} />
         </div>
       </div>
 

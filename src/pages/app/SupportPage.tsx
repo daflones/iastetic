@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, LifeBuoy, Loader2, MessageSquarePlus, Send } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import SupportContact from '@/components/ui/SupportContact'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import clsx from 'clsx'
 
 const CATS = [
@@ -23,6 +25,7 @@ interface Msg { id: string; sender: 'company' | 'admin'; body: string; created_a
 export default function SupportPage() {
   const { company } = useAuth() as any
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const pg = usePaged(tickets, 8)
   const [open, setOpen] = useState<Ticket | null>(null)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [form, setForm] = useState({ subject: '', category: 'duvida', body: '' })
@@ -76,6 +79,8 @@ export default function SupportPage() {
         </div>
         {!creating && <button className="btn-primary" onClick={() => { setCreating(true); setOpen(null) }}><MessageSquarePlus className="h-4 w-4" /> Novo chamado</button>}
       </div>
+
+      <SupportContact compact />
 
       <AnimatePresence mode="wait">
         {creating ? (
@@ -134,7 +139,7 @@ export default function SupportPage() {
           </motion.div>
         ) : (
           <motion.div key="list" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-2.5">
-            {tickets.map(t => (
+            {pg.slice.map(t => (
               <button key={t.id} onClick={() => openTicket(t)} className="card-lux p-4 w-full text-left flex items-center gap-4 hover:shadow-soft transition">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">{t.subject}</p>
@@ -143,6 +148,7 @@ export default function SupportPage() {
                 <span className={clsx('badge text-[10px] shrink-0', st(t.status)[1])}>{st(t.status)[0]}</span>
               </button>
             ))}
+            <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />
             {!tickets.length && (
               <div className="card-lux p-10 text-center text-sm text-ink-muted">
                 Nenhum chamado ainda. Precisa de ajuda? <button className="text-brand-600 underline" onClick={() => setCreating(true)}>Abra o primeiro</button>.

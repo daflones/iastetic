@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Lock, Plus, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import { NICHES } from '@/lib/niches'
 import { onlyDigits } from '@/lib/validators'
@@ -29,6 +30,8 @@ export default function ProfessionalsPage() {
     setItems((data as Professional[]) ?? [])
   }
 
+  const pg = usePaged(items, 9)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -44,7 +47,7 @@ export default function ProfessionalsPage() {
       {company && <OwnerCard company={company} onSaved={refresh} />}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.map(p => (
+        {pg.slice.map(p => (
           <button key={p.id} onClick={() => setEditing(p)} className={clsx('card-lux p-5 text-left hover:shadow-glow transition-shadow', !p.active && 'opacity-50')}>
             <div className="flex items-center gap-3">
               <div className="h-11 w-11 rounded-full grid place-items-center text-white font-semibold shadow-sm" style={{ background: p.color ?? '#a78bfa' }}>
@@ -61,6 +64,7 @@ export default function ProfessionalsPage() {
           </button>
         ))}
       </div>
+      <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />
       {items.length === 0 && <p className="card-lux p-10 text-center text-sm text-ink-muted">Nenhum profissional ainda. Adicione quem atende.</p>}
 
       {editing && <ProfModal prof={editing} companyId={company!.id} onClose={r => { setEditing(null); if (r) load() }} />}

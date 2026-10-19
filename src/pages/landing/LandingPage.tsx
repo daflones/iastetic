@@ -9,6 +9,7 @@ import { FUNCTIONS_URL, SUPABASE_ANON_KEY, brl } from '@/lib/supabase'
 import { NICHES, NICHE_LIST, applyNicheTheme, type NicheId } from '@/lib/niches'
 import Art from '@/components/ui/Art'
 import NicheArt from '@/components/ui/NicheArt'
+import SupportContact from '@/components/ui/SupportContact'
 import { supabase } from '@/lib/supabase'
 import type { Plan } from '@/lib/types'
 import clsx from 'clsx'
@@ -263,6 +264,7 @@ export default function LandingPage() {
             </details>
           ))}
         </div>
+        <SupportContact className="mt-10" />
       </section>
 
       {/* CTA final */}

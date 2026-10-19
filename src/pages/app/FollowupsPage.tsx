@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, Plus, Trash2, X, Volume2, Image, Type } from 'lucide-react'
 import { supabase, fmtDateTime } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import type { FollowupRule } from '@/lib/types'
 import clsx from 'clsx'
@@ -40,6 +41,7 @@ const CHANNELS = [
 export default function FollowupsPage() {
   const { company, plan, features } = useAuth()
   const [rules, setRules] = useState<FollowupRule[]>([])
+  const pg = usePaged(rules, 6)
   const [jobs, setJobs] = useState<any[]>([])
   const [editing, setEditing] = useState<Partial<FollowupRule> | null>(null)
 
@@ -75,7 +77,7 @@ export default function FollowupsPage() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-3">
-          {rules.map(r => {
+          {pg.slice.map(r => {
             const RuleIcon = CHANNELS.find(c => c.id === r.channel)?.icon ?? Type
             return (
             <div key={r.id} className={clsx('card-lux p-5 flex items-start gap-4', !r.active && 'opacity-55')}>
@@ -101,6 +103,7 @@ export default function FollowupsPage() {
             )
           })}
           {rules.length === 0 && <p className="card-lux p-10 text-center text-sm text-ink-muted">Nenhuma regra. {NICHE_EMPTY_HINT[nicheId]}</p>}
+          <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />
         </div>
 
         <div className="card-lux p-5 h-fit">

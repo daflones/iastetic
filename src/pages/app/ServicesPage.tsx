@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { supabase, brl } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import { NICHES } from '@/lib/niches'
 import type { Professional, Service } from '@/lib/types'
@@ -30,6 +31,8 @@ export default function ServicesPage() {
     await supabase.from('services').update({ active: !s.active }).eq('id', s.id); load()
   }
 
+  const pg = usePaged(items, 12)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -43,7 +46,7 @@ export default function ServicesPage() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.map(s => (
+        {pg.slice.map(s => (
           <div key={s.id} className={clsx('card-lux p-5', !s.active && 'opacity-50')}>
             <div className="flex items-start justify-between">
               <div>
@@ -64,6 +67,7 @@ export default function ServicesPage() {
           </div>
         ))}
       </div>
+      <Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} />
       {items.length === 0 && <p className="card-lux p-10 text-center text-sm text-ink-muted">Nenhum serviço cadastrado.</p>}
 
       {editing && <ServiceModal service={editing} profs={profs} companyId={company!.id} onClose={reload => { setEditing(null); if (reload) load() }} />}

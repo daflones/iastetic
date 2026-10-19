@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, Bot, Columns2, GripVertical, List, MessageCircle, Phone, Search, X } from 'lucide-react'
 import { supabase, brl, fmtDate, fmtPhone, fmtTime } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import Pagination, { usePaged } from '@/components/ui/Pagination'
 import { useDraft } from '@/hooks/useDraft'
 import type { Contact } from '@/lib/types'
 import clsx from 'clsx'
@@ -56,6 +57,8 @@ export default function ContactsPage() {
     const s = `${c.name ?? ''} ${c.push_name ?? ''} ${c.phone} ${(c.tags ?? []).join(' ')}`.toLowerCase()
     return s.includes(search.toLowerCase()) && (stageFilter === 'all' || c.stage === stageFilter)
   })
+  const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({})
+  const pg = usePaged(filtered, 15, [search, stageFilter])
 
   return (
     <div className="space-y-5">
@@ -99,7 +102,13 @@ export default function ContactsPage() {
                     const c = contacts.find(x => x.id === id)
                     if (c) moveStage(c, stage.id)
                   }}>
-                  {items.map(c => <ContactCard key={c.id} c={c} fu={pendingFu[c.id] ?? 0} onClick={() => setEditing(c)} />)}
+                  {(expandedStages[stage.id] ? items : items.slice(0, 8)).map(c => <ContactCard key={c.id} c={c} fu={pendingFu[c.id] ?? 0} onClick={() => setEditing(c)} />)}
+                  {items.length > 8 && !expandedStages[stage.id] && (
+                    <button onClick={() => setExpandedStages(x => ({ ...x, [stage.id]: true }))}
+                      className="rounded-xl border border-dashed border-line py-3 text-[11px] text-ink-muted hover:border-brand-300 hover:text-brand-600 transition col-span-full">
+                      +{items.length - 8} mais nesta etapa — clique pra ver
+                    </button>
+                  )}
                   {items.length === 0 && <p className="text-[11px] text-ink-muted py-5 text-center col-span-full">vazio — arraste contatos pra cá</p>}
                 </div>
               </div>
@@ -122,7 +131,7 @@ export default function ContactsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(c => {
+              {pg.slice.map(c => {
                 const st = stageInfo(c.stage)
                 return (
                   <tr key={c.id} onClick={() => setEditing(c)} className="border-b border-line/50 hover:bg-brand-50/50 cursor-pointer transition">
@@ -154,6 +163,7 @@ export default function ContactsPage() {
             </tbody>
           </table>
           {filtered.length === 0 && <p className="text-xs text-ink-muted text-center py-10">Nenhum contato encontrado.</p>}
+          <div className="px-4 pb-4"><Pagination page={pg.page} pages={pg.pages} total={pg.total} onChange={pg.setPage} /></div>
         </div>
       )}
 
