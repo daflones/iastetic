@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sparkles, CalendarCheck, MessageCircle, CreditCard, Bell, BrainCircuit,
   Check, ArrowRight, Send, Loader2, Bot, QrCode, ShieldCheck, Play, Pause, Volume2,
@@ -35,7 +35,14 @@ export default function LandingPage() {
   const [niche, setNiche] = useState<NicheId>('olhar')
   const [plans, setPlans] = useState<Plan[]>([])
   const [yearly, setYearly] = useState(false)
+  const [spotlight, setSpotlight] = useState(false)
   const n = NICHES[niche]
+
+  function highlightDemo() {
+    setSpotlight(true)
+    document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setTimeout(() => setSpotlight(false), 1900)
+  }
 
   useEffect(() => { applyNicheTheme(niche) }, [niche])
   useEffect(() => {
@@ -57,7 +64,7 @@ export default function LandingPage() {
             <span className="font-display text-xl font-bold">IAstetic</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 ml-8 text-sm text-ink-soft">
-            <a href="#demo" className="link-underline hover:text-brand-600 transition">Teste ao vivo</a>
+            <button onClick={highlightDemo} className="link-underline hover:text-brand-600 transition">Teste ao vivo</button>
             <a href="#funcoes" className="link-underline hover:text-brand-600 transition">Funções</a>
             <a href="#planos" className="link-underline hover:text-brand-600 transition">Planos</a>
             <a href="#faq" className="link-underline hover:text-brand-600 transition">Dúvidas</a>
@@ -68,6 +75,14 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
+
+      {/* spotlight: escurece a tela e recorta o chat da demo */}
+      <AnimatePresence>
+        {spotlight && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}
+            className="fixed inset-0 z-40 bg-black/75 backdrop-blur-[2px] pointer-events-none" />
+        )}
+      </AnimatePresence>
 
       {/* Hero */}
       <section className="container relative pt-14 pb-10 grid lg:grid-cols-2 gap-12 items-center">
@@ -87,7 +102,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/cadastro" className="btn-primary text-base px-6 py-3">Teste grátis por 7 dias</Link>
-              <a href="#demo" className="btn-outline text-base px-6 py-3"><Bot className="h-5 w-5" /> Converse com a IA agora</a>
+              <button onClick={highlightDemo} className="btn-outline text-base px-6 py-3"><Bot className="h-5 w-5" /> Converse com a IA agora</button>
             </div>
             <div className="mt-6 flex items-center gap-5 text-sm text-ink-muted">
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-brand-500" /> Sem cartão</span>
@@ -99,7 +114,8 @@ export default function LandingPage() {
         </div>
 
         {/* Demo ao vivo */}
-        <motion.div id="demo" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .6, delay: .15 }} className="relative">
+        <motion.div id="demo" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .6, delay: .15 }}
+          className={clsx('relative rounded-3xl transition-all duration-500', spotlight && 'z-50 ring-4 ring-brand-400/70 shadow-glow scale-[1.02]')}>
           <Art name="hero-landing" className="pointer-events-none absolute -top-16 -right-10 w-64 lg:w-80 opacity-90 blur-[1px] -z-10 rotate-3 animate-float hidden md:block" />
           <LiveDemo niche={niche} onNicheChange={setNiche} />
         </motion.div>
