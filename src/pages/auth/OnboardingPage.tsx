@@ -417,9 +417,13 @@ export default function OnboardingPage() {
                       </div>
                     </div>
                   ))}
-                  <button className="btn-secondary text-xs" onClick={() => setProfessionals([...professionals, { name: '', color: PROF_COLORS[professionals.length % PROF_COLORS.length], pin: '' }])}>
-                    <Plus className="h-3.5 w-3.5" /> Adicionar
-                  </button>
+                  {professionals.length < 3 ? (
+                    <button className="btn-secondary text-xs" onClick={() => setProfessionals([...professionals, { name: '', color: PROF_COLORS[professionals.length % PROF_COLORS.length], pin: '' }])}>
+                      <Plus className="h-3.5 w-3.5" /> Adicionar
+                    </button>
+                  ) : (
+                    <p className="text-[10px] text-ink-muted">No trial dá pra cadastrar até 3 — nos planos, até 20.</p>
+                  )}
                 </div>
               )}
 

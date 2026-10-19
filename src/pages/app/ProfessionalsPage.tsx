@@ -19,7 +19,7 @@ async function sha256(text: string): Promise<string> {
 }
 
 export default function ProfessionalsPage() {
-  const { company, refresh } = useAuth() as any
+  const { company, plan, refresh } = useAuth() as any
   const [items, setItems] = useState<Professional[]>([])
   const [editing, setEditing] = useState<Partial<Professional> | null>(null)
   const niche = company ? NICHES[company.niche as keyof typeof NICHES] : null
@@ -31,6 +31,10 @@ export default function ProfessionalsPage() {
   }
 
   const pg = usePaged(items, 9)
+  const isTrial = company?.subscription_status === 'trial'
+  const limit = isTrial ? Math.min(plan?.professionals_limit ?? 3, 3) : (plan?.professionals_limit ?? 3)
+  const activeCount = items.filter(i => i.active).length
+  const atLimit = activeCount >= limit
 
   return (
     <div className="space-y-5">
@@ -39,9 +43,13 @@ export default function ProfessionalsPage() {
           <h1 className="h-display text-2xl sm:text-3xl">{niche?.professionalLabelPlural ?? 'Profissionais'}</h1>
           <p className="text-sm text-ink-muted">Cada um pode ter horários próprios; a IA respeita na hora de agendar.</p>
         </div>
-        <button className="btn-primary" onClick={() => setEditing({ name: '', specialties: [], working_hours: null, active: true })}>
-          <Plus className="h-4 w-4" /> Adicionar
-        </button>
+        <div className="text-right">
+          <button className="btn-primary" disabled={atLimit} title={atLimit ? `Limite do plano: ${limit}` : ''}
+            onClick={() => setEditing({ name: '', specialties: [], working_hours: null, active: true })}>
+            <Plus className="h-4 w-4" /> Adicionar
+          </button>
+          <p className="text-[10px] text-ink-muted mt-1">{activeCount}/{limit} {isTrial ? '· trial' : 'do plano'}</p>
+        </div>
       </div>
 
       {company && <OwnerCard company={company} onSaved={refresh} />}
@@ -133,8 +141,14 @@ function ProfModal({ prof, companyId, onClose }: { prof: Partial<Professional>; 
     const payload: any = { name, specialties: specialties.split(',').map(s => s.trim()).filter(Boolean), working_hours: customHours ? hours : null, active, color }
     // senha só pode ser criada ou substituída por uma NOVA — nunca exibida/editada
     if (pin.trim()) payload.pin_hash = await sha256(pin.trim())
-    if (isNew) await supabase.from('professionals').insert({ ...payload, company_id: companyId })
-    else await supabase.from('professionals').update(payload).eq('id', prof.id)
+    const r = isNew
+      ? await supabase.from('professionals').insert({ ...payload, company_id: companyId })
+      : await supabase.from('professionals').update(payload).eq('id', prof.id)
+    if (r.error) {
+      setBusy(false)
+      alert(r.error.message.includes('PRO_LIMIT') ? r.error.message.replace('PRO_LIMIT: ', '') : 'Não foi possível salvar. Tente de novo.')
+      return
+    }
     setBusy(false); clearDrafts(); onClose(true)
   }
 
