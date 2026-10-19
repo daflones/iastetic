@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root, [data-niche='estetica'] {
+    --brand-50: 252 239 247; --brand-100: 248 225 239; --brand-200: 241 196 224; --brand-300: 234 166 209;
+    --brand-400: 225 137 193; --brand-500: 194 101 163; --brand-600: 161 84 134; --brand-700: 129 68 105;
+    --brand-800: 97 51 77; --brand-900: 65 34 48;
+    --accent-100: 243 238 255; --accent-300: 216 197 255; --accent-500: 162 122 255; --accent-700: 106 48 240;
+    --surface: 255 255 255; --canvas: 251 248 250; --ink: 27 27 31; --ink-soft: 91 83 111; --ink-muted: 160 149 183; --line: 236 228 236;
+  }
+  [data-niche='salao'] {
+    --brand-50: 253 247 236; --brand-100: 250 236 210; --brand-200: 244 216 160; --brand-300: 236 192 110;
+    --brand-400: 224 166 70; --brand-500: 198 139 44; --brand-600: 163 112 32; --brand-700: 128 87 26;
+    --brand-800: 92 62 20; --brand-900: 58 38 12;
+    --accent-100: 240 240 243; --accent-300: 200 202 214; --accent-500: 110 113 135; --accent-700: 56 58 76;
+    --surface: 255 255 255; --canvas: 250 248 244; --ink: 30 27 22; --ink-soft: 104 93 76; --ink-muted: 168 156 138; --line: 238 231 220;
+  }
+  [data-niche='unhas'] {
+    --brand-50: 255 241 240; --brand-100: 255 226 224; --brand-200: 255 197 193; --brand-300: 255 160 153;
+    --brand-400: 250 120 111; --brand-500: 228 84 84; --brand-600: 194 60 66; --brand-700: 154 44 54;
+    --brand-800: 112 31 42; --brand-900: 72 19 28;
+    --accent-100: 237 250 246; --accent-300: 184 236 220; --accent-500: 72 190 160; --accent-700: 30 132 108;
+    --surface: 255 255 255; --canvas: 255 249 248; --ink: 34 24 28; --ink-soft: 112 84 92; --ink-muted: 180 152 160; --line: 246 226 228;
+  }
+  [data-niche='olhar'] {
+    --brand-50: 247 242 247; --brand-100: 238 228 239; --brand-200: 220 203 222; --brand-300: 196 168 200;
+    --brand-400: 168 128 174; --brand-500: 136 92 144; --brand-600: 108 70 116; --brand-700: 84 52 90;
+    --brand-800: 60 36 64; --brand-900: 38 22 42;
+    --accent-100: 252 244 236; --accent-300: 240 212 186; --accent-500: 204 156 112; --accent-700: 150 104 64;
+    --surface: 255 255 255; --canvas: 250 247 249; --ink: 30 24 32; --ink-soft: 96 84 100; --ink-muted: 164 150 168; --line: 234 226 234;
+  }
+  [data-niche='barbearia'] {
+    --brand-50: 247 243 238; --brand-100: 238 229 216; --brand-200: 222 206 182; --brand-300: 203 180 144;
+    --brand-400: 180 150 108; --brand-500: 152 122 82; --brand-600: 122 96 64; --brand-700: 94 74 50;
+    --brand-800: 66 52 36; --brand-900: 42 33 24;
+    --accent-100: 232 240 244; --accent-300: 180 202 216; --accent-500: 84 128 154; --accent-700: 40 74 96;
+    --surface: 255 255 255; --canvas: 249 247 243; --ink: 32 28 24; --ink-soft: 98 88 74; --ink-muted: 160 150 134; --line: 234 228 218;
+  }
+  [data-niche='clinica'] {
+    --brand-50: 240 250 249; --brand-100: 221 242 240; --brand-200: 186 228 224; --brand-300: 143 210 205;
+    --brand-400: 99 186 181; --brand-500: 62 158 154; --brand-600: 47 128 125; --brand-700: 38 102 100;
+    --brand-800: 28 76 74; --brand-900: 19 50 49;
+    --accent-100: 250 240 244; --accent-300: 240 200 216; --accent-500: 210 128 158; --accent-700: 160 72 106;
+    --surface: 255 255 255; --canvas: 248 251 250; --ink: 24 34 34; --ink-soft: 78 96 96; --ink-muted: 148 166 166; --line: 224 236 234;
+  }
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { @apply bg-canvas text-ink font-sans; }
+  * { @apply border-line; }
+  ::selection { @apply bg-brand-200 text-brand-900; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { @apply bg-brand-200 rounded-full; }
+}
+
+@layer components {
+  .card { @apply bg-surface rounded-2xl border border-line shadow-card relative; }
+  .card::before {
+    content: '';
+    @apply absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-300/50 to-transparent rounded-t-2xl pointer-events-none;
+  }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400; }
+  .btn-primary { @apply btn text-white bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 shadow-soft hover:-translate-y-0.5; }
+  .btn-secondary { @apply btn bg-brand-50 text-brand-700 hover:bg-brand-100; }
+  .btn-ghost { @apply btn text-ink-soft hover:bg-brand-50 hover:text-brand-700; }
+  .btn-outline { @apply btn border border-line bg-surface hover:border-brand-300 hover:text-brand-700; }
+  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100; }
+  .input { @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-brand-300 transition; }
+  .label { @apply block text-xs font-semibold uppercase tracking-wider text-ink-soft mb-1.5; }
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .h-display { @apply font-display font-semibold tracking-tight text-ink; }
+  .glass { @apply bg-white/70 backdrop-blur-xl border border-white/60; }
+  .gradient-text { @apply bg-gradient-to-r from-brand-600 via-brand-500 to-accent-500 bg-clip-text text-transparent; }
+
+  /* ---- high-end visuals ---- */
+  .texture-dots {
+    background-image: radial-gradient(rgb(var(--brand-300) / 0.35) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .texture-grid {
+    background-image:
+      linear-gradient(rgb(var(--brand-300) / 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--brand-300) / 0.12) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  .texture-noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  }
+  .mesh-bg {
+    background:
+      radial-gradient(60rem 30rem at -10% -10%, rgb(var(--brand-200) / 0.45), transparent 60%),
+      radial-gradient(50rem 28rem at 110% 0%, rgb(var(--accent-300) / 0.35), transparent 60%),
+      radial-gradient(40rem 26rem at 50% 120%, rgb(var(--brand-100) / 0.5), transparent 60%),
+      rgb(var(--canvas));
+  }
+  .orb {
+    @apply pointer-events-none absolute rounded-full blur-3xl opacity-40;
+    animation: float-orb 14s ease-in-out infinite alternate;
+  }
+  .card-lux {
+    @apply card overflow-hidden;
+    box-shadow: 0 1px 2px rgb(var(--ink) / 0.04), 0 12px 32px -14px rgb(var(--brand-700) / 0.16);
+  }
+  .card-lux::before {
+    @apply via-brand-300/70;
+  }
+  .card-lux:hover::before {
+    @apply via-brand-400/90;
+  }
+  .shimmer {
+    position: relative; overflow: hidden;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent 30%, rgb(var(--brand-200) / 0.5) 50%, transparent 70%);
+    animation: shimmer-sweep 2.4s ease-in-out infinite;
+  }
+  .ring-glow {
+    box-shadow: 0 0 0 1px rgb(var(--brand-300) / 0.4), 0 12px 40px -12px rgb(var(--brand-500) / 0.35);
+  }
+}
+
+@keyframes float-orb {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(2.5rem, -2rem, 0) scale(1.12); }
+}
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(100%); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+.anim-pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* micro-interações globais */
+.btn-primary:active { transform: translateY(0) scale(0.98); }
+.link-underline {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1.5px; background-repeat: no-repeat; background-position: left bottom;
+  transition: background-size .3s ease;
+}
+.link-underline:hover { background-size: 100% 1.5px; }
+
+/* número/destaque animado ao entrar */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.anim-pop { animation: pop-in .45s cubic-bezier(.2,.9,.3,1.2) both; }
