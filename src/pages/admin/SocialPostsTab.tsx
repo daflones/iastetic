@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Download, Image as ImageIcon, Loader2, Megaphone, Send, Sparkles, Trash2 } from 'lucide-react'
-import { callFn, fmtDate } from '@/lib/supabase'
+import { CalendarClock, Download, Heart, Image as ImageIcon, Loader2, Megaphone, MessageCircle, Send, Sparkles, Trash2, Unplug } from 'lucide-react'
+
+function Instagram({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
+}
+import { callFn, fmtDate, FUNCTIONS_URL } from '@/lib/supabase'
 import clsx from 'clsx'
 
 type Slide = { role: 'dor' | 'solucao' | 'cta'; headline: string; sub: string; image_url?: string; image_prompt?: string }
 type Draft = { title: string; slides: Slide[]; caption: string; hashtags: string[] }
-type SocialPost = { id: string; title: string; slides: Slide[]; caption: string; hashtags: string[]; status: 'rascunho' | 'pronto' | 'publicado'; created_at: string }
+type SocialPost = { id: string; title: string; slides: Slide[]; caption: string; hashtags: string[]; status: 'rascunho' | 'pronto' | 'publicado'; created_at: string; scheduled_at?: string | null; ig_media_id?: string | null; published_at?: string | null; publish_error?: string | null }
+type IgStatus = { connected: boolean; username?: string; avatar?: string | null; expires_at?: string; app_id?: string | null; expired?: boolean }
+type IgMedia = { id: string; caption?: string; media_url?: string; thumbnail_url?: string; like_count?: number; comments_count?: number; timestamp: string; permalink: string; media_type: string }
 
 const ROLE_META: Record<string, { label: string; cls: string }> = {
   dor: { label: 'A DOR', cls: 'bg-red-500/90' },
@@ -14,9 +20,9 @@ const ROLE_META: Record<string, { label: string; cls: string }> = {
 }
 const STATUS: Record<string, string> = { rascunho: 'bg-slate-100 text-slate-600', pronto: 'bg-emerald-100 text-emerald-700', publicado: 'bg-brand-100 text-brand-700' }
 
-/** Compõe o slide final (imagem + textos) num canvas 1080×1920 e baixa. */
-async function downloadSlide(post: SocialPost, idx: number) {
-  const sl = post.slides[idx]; if (!sl?.image_url) return
+/** Compõe o slide final (imagem + textos) num canvas 1080×1920. */
+async function composeSlide(post: SocialPost, idx: number): Promise<HTMLCanvasElement | null> {
+  const sl = post.slides[idx]; if (!sl?.image_url) return null
   const W = 1080, H = 1920
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H
   const ctx = cv.getContext('2d')!
@@ -51,10 +57,105 @@ async function downloadSlide(post: SocialPost, idx: number) {
   for (const ln of wrap(sl.sub, W - 128)) { ctx.fillText(ln, 64, y + 18); y += 58 }
   ctx.font = '600 30px Inter, system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.65)'
   ctx.fillText('iastetic.com.br · 7 dias grátis', 64, H - 60)
+  return cv
+}
+
+async function downloadSlide(post: SocialPost, idx: number) {
+  const cv = await composeSlide(post, idx); if (!cv) return
   const a = document.createElement('a')
   a.href = cv.toDataURL('image/png')
   a.download = `${post.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-slide${idx + 1}.png`
   a.click()
+}
+
+/** Compõe os slides com texto e sobe pro storage — Instagram publica a arte final, não a imagem crua. */
+async function uploadComposed(post: SocialPost) {
+  for (let i = 0; i < post.slides.length; i++) {
+    if (!post.slides[i]?.image_url) continue
+    const cv = await composeSlide(post, i)
+    if (!cv) continue
+    await callFn('admin', { action: 'social_upload_slide', post_id: post.id, index: i, data_url: cv.toDataURL('image/png') })
+  }
+}
+
+
+function IgConnection({ ig, onChange }: { ig: IgStatus | null; onChange: () => void }) {
+  const connectUrl = ig?.app_id
+    ? `https://www.facebook.com/v21.0/dialog/oauth?client_id=${ig.app_id}&redirect_uri=${encodeURIComponent(FUNCTIONS_URL + '/instagram-auth')}&response_type=code&scope=instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management`
+    : null
+  return (
+    <div className="card-lux p-4 flex items-center gap-3 flex-wrap">
+      <span className={clsx('h-10 w-10 rounded-2xl grid place-items-center overflow-hidden', ig?.connected ? 'ring-2 ring-brand-400' : 'bg-gradient-to-br from-brand-100 to-accent-100')}>
+        {ig?.avatar ? <img src={ig.avatar} className="h-full w-full object-cover" /> : <Instagram className="h-5 w-5 text-brand-600" />}
+      </span>
+      <div className="flex-1 min-w-[180px]">
+        {ig?.connected
+          ? <><p className="font-semibold text-sm">@{ig.username} <span className="text-emerald-600 text-xs font-normal">· conectado</span></p>
+              <p className="text-[11px] text-ink-muted">token renova automaticamente · expira {ig.expires_at ? fmtDate(ig.expires_at) : '—'}</p></>
+          : <><p className="font-semibold text-sm">{ig?.expired ? 'Sessão expirada — reconecta' : 'Instagram não conectado'}</p>
+              <p className="text-[11px] text-ink-muted">{ig?.app_id ? 'Conecta a conta Business do IAstetic pra publicar e ver métricas' : 'Configure META_APP_ID/META_APP_SECRET em Integrações primeiro'}</p></>}
+      </div>
+      {ig?.connected
+        ? <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'ig_disconnect' }); onChange() }}><Unplug className="h-3.5 w-3.5" /> Desconectar</button>
+        : connectUrl && <a href={connectUrl} className="btn-primary text-xs !py-2"><Instagram className="h-4 w-4" /> Conectar Instagram</a>}
+    </div>
+  )
+}
+
+function IgFeed() {
+  const [media, setMedia] = useState<IgMedia[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const [comments, setComments] = useState<Record<string, { username: string; text: string; timestamp: string }[]>>({})
+
+  useEffect(() => {
+    callFn<IgMedia[]>('admin', { action: 'ig_media' }).then(setMedia).catch(() => setMedia([]))
+  }, [])
+
+  async function openComments(id: string) {
+    if (open === id) { setOpen(null); return }
+    setOpen(id)
+    if (!comments[id]) {
+      const c = await callFn<{ username: string; text: string; timestamp: string }[]>('admin', { action: 'ig_comments', media_id: id }).catch(() => [])
+      setComments(prev => ({ ...prev, [id]: c ?? [] }))
+    }
+  }
+
+  if (media === null) return <div className="card-lux p-6 grid place-items-center"><Loader2 className="h-5 w-5 animate-spin text-brand-400" /></div>
+  if (!media.length) return <div className="card-lux p-6 text-center text-sm text-ink-muted">Nenhum post no perfil ainda.</div>
+
+  return (
+    <div className="card-lux p-5">
+      <p className="font-semibold text-sm mb-3 flex items-center gap-2"><Instagram className="h-4 w-4 text-brand-500" /> Posts do Instagram ({media.length})</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+        {media.map(m => (
+          <button key={m.id} onClick={() => openComments(m.id)} className="relative aspect-square rounded-xl overflow-hidden group text-left ring-1 ring-black/5">
+            <img src={m.thumbnail_url ?? m.media_url} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="absolute bottom-1.5 inset-x-0 px-2 flex items-center gap-2 text-white text-[10px] font-medium">
+              <span className="flex items-center gap-0.5"><Heart className="h-3 w-3" />{m.like_count ?? 0}</span>
+              <span className="flex items-center gap-0.5"><MessageCircle className="h-3 w-3" />{m.comments_count ?? 0}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {open && (
+        <div className="mt-4 rounded-xl bg-canvas p-4">
+          <p className="text-xs font-semibold mb-2 flex items-center gap-2">
+            Comentários · <a href={media.find(m => m.id === open)?.permalink} target="_blank" className="text-brand-600 underline" rel="noreferrer">ver no Instagram</a>
+          </p>
+          {(comments[open] ?? []).length === 0 && <p className="text-xs text-ink-muted">Nenhum comentário.</p>}
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {(comments[open] ?? []).map((c, i) => (
+              <div key={i} className="text-xs bg-surface rounded-lg px-3 py-2">
+                <span className="font-semibold text-brand-700">@{c.username}</span> <span className="text-ink-soft">{c.text}</span>
+                <span className="block text-[10px] text-ink-muted mt-0.5">{fmtDate(c.timestamp)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SlidePreview({ slide }: { slide: Slide }) {
@@ -80,8 +181,33 @@ export default function SocialPostsTab() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [gen, setGen] = useState<string | null>(null)
+  const [ig, setIg] = useState<IgStatus | null>(null)
+  const [publishing, setPublishing] = useState<string | null>(null)
+  const [schedFor, setSchedFor] = useState<string | null>(null)
+  const [schedAt, setSchedAt] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); loadIg() }, [])
+  async function loadIg() {
+    const r = await callFn<IgStatus>('admin', { action: 'ig_status' }).catch(() => null)
+    if (r) setIg(r)
+  }
+  async function publishNow(post: SocialPost) {
+    setPublishing(post.id)
+    try {
+      await uploadComposed(post)
+      await callFn('admin', { action: 'social_publish', post_id: post.id })
+      await load()
+    } catch (e) { alert((e as Error).message) }
+    setPublishing(null)
+  }
+  async function schedule(post: SocialPost) {
+    setPublishing(post.id)
+    try {
+      await uploadComposed(post)
+      await callFn('admin', { action: 'social_schedule', post_id: post.id, scheduled_at: schedAt || null })
+      setSchedFor(null); setSchedAt(''); load()
+    } finally { setPublishing(null) }
+  }
   async function load() {
     const r = await callFn<SocialPost[]>('admin', { action: 'social_posts' }).catch(() => null)
     if (r) setPosts(r)
@@ -116,7 +242,9 @@ export default function SocialPostsTab() {
   }
 
   return (
-    <div className="grid lg:grid-cols-[400px_1fr] gap-5 items-start">
+    <div className="space-y-5">
+      <IgConnection ig={ig} onChange={loadIg} />
+      <div className="grid lg:grid-cols-[400px_1fr] gap-5 items-start">
       {/* chat da Marqueteira */}
       <div className="card-lux flex flex-col h-[560px]">
         <div className="p-4 border-b border-line flex items-center gap-2">
@@ -177,7 +305,20 @@ export default function SocialPostsTab() {
               <p className="font-semibold">{post.title}</p>
               <span className={clsx('badge text-[10px]', STATUS[post.status])}>{post.status}</span>
               <span className="text-[11px] text-ink-muted">{fmtDate(post.created_at)}</span>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                {post.ig_media_id && <span className="badge bg-emerald-100 text-emerald-700 text-[10px]">publicado no insta</span>}
+                {post.scheduled_at && !post.ig_media_id && <span className="badge bg-amber-100 text-amber-700 text-[10px]"><CalendarClock className="h-3 w-3" /> {fmtDate(post.scheduled_at)}</span>}
+                {post.publish_error && <span className="badge bg-red-100 text-red-600 text-[10px]" title={post.publish_error}>erro ao publicar</span>}
+                {ig?.connected && !post.ig_media_id && post.slides.some(x => x.image_url) && (
+                  <>
+                    <button className="btn-primary !py-1 !px-2.5 text-xs" disabled={publishing === post.id} onClick={() => publishNow(post)}>
+                      {publishing === post.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Instagram className="h-3 w-3" />} Publicar
+                    </button>
+                    <button className="btn-outline !py-1 !px-2.5 text-xs" onClick={() => setSchedFor(schedFor === post.id ? null : post.id)}>
+                      <CalendarClock className="h-3 w-3" /> Agendar
+                    </button>
+                  </>
+                )}
                 <select className="input !py-1 !px-2 text-xs !w-auto" value={post.status}
                   onChange={async e => { await callFn('admin', { action: 'social_post_save', id: post.id, title: post.title, slides: post.slides, caption: post.caption, hashtags: post.hashtags, status: e.target.value }); load() }}>
                   {['rascunho', 'pronto', 'publicado'].map(st => <option key={st} value={st}>{st}</option>)}
@@ -185,6 +326,13 @@ export default function SocialPostsTab() {
                 <button className="btn-ghost !p-1.5 text-red-400" onClick={async () => { await callFn('admin', { action: 'social_post_delete', id: post.id }); load() }}><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
+            {schedFor === post.id && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl bg-canvas p-3">
+                <input type="datetime-local" className="input !py-1.5 text-xs !w-auto" value={schedAt} onChange={e => setSchedAt(e.target.value)} />
+                <button className="btn-primary !py-1.5 text-xs" onClick={() => schedule(post)} disabled={!schedAt}>Confirmar</button>
+                {post.scheduled_at && <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'social_schedule', post_id: post.id, scheduled_at: null }); load() }}>cancelar</button>}
+              </div>
+            )}
             <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
               {post.slides.map((sl, i) => (
                 <div key={i} className="relative shrink-0">
@@ -209,6 +357,8 @@ export default function SocialPostsTab() {
           </div>
         ))}
       </div>
+      </div>
+      {ig?.connected && <IgFeed />}
     </div>
   )
 }

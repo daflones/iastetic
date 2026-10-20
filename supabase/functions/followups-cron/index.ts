@@ -4,6 +4,7 @@ import { sendText, sendMedia, sendAudio } from '../_shared/evolution.ts'
 import { tryConsume } from '../_shared/quota.ts'
 import { chatText, synthesizeSpeech, logUsage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
+import { publishDueSocialPosts } from '../_shared/instagram.ts'
 
 // Executado por pg_cron: follow-ups a cada ~15 min; escalada de handoff a cada 1 min (body {"handoffs":true})
 Deno.serve(async (req) => {
@@ -16,6 +17,7 @@ Deno.serve(async (req) => {
 
     if (body?.handoffs) {
       const [escalated, campaignSent, prospectSent] = await Promise.all([escalateHandoffs(db), dispatchCampaignJobs(db), dispatchProspectJobs(db)])
+      await publishDueSocialPosts(db).catch(() => 0)
       return json({ ok: true, escalated, campaign_sent: campaignSent, prospect_sent: prospectSent })
     }
 

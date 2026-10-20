@@ -3,6 +3,7 @@ import { requireAdmin, requireUser, serviceClient } from '../_shared/db.ts'
 import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText, sendMedia, checkWhatsAppNumbers } from '../_shared/evolution.ts'
 import { chat, generateImage, transcribeAudio, type ChatMessage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
+import { igConfig, igFetch, publishCarousel } from '../_shared/instagram.ts'
 
 // Painel administrativo da plataforma IAstetic
 
@@ -215,6 +216,7 @@ Deno.serve(async (req) => {
           'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
           'EVOLUTION_URL', 'EVOLUTION_APIKEY',
           'WEBHOOK_INGRESS_SECRET', 'CRON_SECRET', 'ADMIN_BOOTSTRAP_SECRET', 'PUBLIC_SITE_URL', 'SERPER_API_KEY',
+          'META_APP_ID', 'META_APP_SECRET',
         ]
         const { data: row } = await db.from('platform_settings').select('value').eq('key', 'secrets').maybeSingle()
         const dbSecrets = row?.value ?? {}
@@ -439,6 +441,96 @@ Deno.serve(async (req) => {
         } catch {
           return json({ ok: true, data: { say: raw.slice(0, 800), draft: null } })
         }
+      }
+
+      // ---------- Instagram conectado ----------
+      case 'ig_status': {
+        const appId = await getSecret('META_APP_ID')
+        const ig = await igConfig(db)
+        const base = { app_id: appId ?? null }
+        if (!ig) return json({ ok: true, data: { ...base, connected: false } })
+        try {
+          const me = await igFetch(ig.access_token, 'me', { fields: 'username' })
+          const { data: cfg } = await db.from('platform_settings').select('value').eq('key', 'instagram').single()
+          // renova o token se faltar menos de 7 dias pra expirar
+          const exp = new Date(cfg.value.token_expires_at ?? 0).getTime()
+          if (exp - Date.now() < 7 * 864e5) {
+            const appSecret = await getSecret('META_APP_SECRET')
+            if (appId && appSecret) {
+              const r = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${ig.access_token}`).then(r => r.json()).catch(() => ({}))
+              if (r.access_token) {
+                cfg.value.access_token = r.access_token
+                cfg.value.token_expires_at = new Date(Date.now() + Number(r.expires_in ?? 5_184_000) * 1000).toISOString()
+                await db.from('platform_settings').update({ value: cfg.value }).eq('key', 'instagram')
+              }
+            }
+          }
+          return json({ ok: true, data: { ...base, connected: true, username: cfg.value.username ?? me.username, avatar: cfg.value.avatar ?? null, expires_at: cfg.value.token_expires_at } })
+        } catch {
+          return json({ ok: true, data: { ...base, connected: false, expired: true } })
+        }
+      }
+
+      case 'ig_disconnect': {
+        await db.from('platform_settings').delete().eq('key', 'instagram')
+        return json({ ok: true })
+      }
+
+      case 'ig_media': {
+        const ig = await igConfig(db)
+        if (!ig) throw new ApiError(400, 'NO_IG', 'Instagram não conectado.')
+        const r = await igFetch(ig.access_token, `${ig.ig_user_id}/media`, {
+          fields: 'id,caption,media_url,thumbnail_url,like_count,comments_count,timestamp,permalink,media_type', limit: '24',
+        })
+        return json({ ok: true, data: r.data ?? [] })
+      }
+
+      case 'ig_comments': {
+        const ig = await igConfig(db)
+        if (!ig) throw new ApiError(400, 'NO_IG', 'Instagram não conectado.')
+        const r = await igFetch(ig.access_token, `${str(body.media_id, 40)}/comments`, {
+          fields: 'text,username,timestamp,like_count', limit: '50',
+        })
+        return json({ ok: true, data: r.data ?? [] })
+      }
+
+      case 'social_upload_slide': {
+        const postId = str(body.post_id, 64)
+        const idx = Math.min(Math.max(Number(body.index) || 0, 0), 9)
+        const m = /^data:image\/(\w+);base64,(.+)$/.exec(String(body.data_url ?? ''))
+        if (!m) throw new ApiError(400, 'BAD_IMAGE', 'Imagem inválida.')
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        if (!post) throw new ApiError(404, 'NOT_FOUND', 'Post não encontrado.')
+        const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0))
+        if (bytes.length > 9_000_000) throw new ApiError(400, 'TOO_BIG', 'Imagem acima de 9MB.')
+        const path = `social/${postId}/${idx}.png`
+        await db.storage.from('prospect').upload(path, bytes, { contentType: 'image/png', upsert: true })
+        const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+        const slides = [...(post.slides ?? [])]
+        if (slides[idx]) slides[idx] = { ...slides[idx], composed_url: pub.publicUrl }
+        await db.from('social_posts').update({ slides }).eq('id', postId)
+        return json({ ok: true, data: { url: pub.publicUrl } })
+      }
+
+      case 'social_publish': {
+        const ig = await igConfig(db)
+        if (!ig) throw new ApiError(400, 'NO_IG', 'Conecte o Instagram primeiro.')
+        const { data: post } = await db.from('social_posts').select('*').eq('id', str(body.post_id, 64)).single()
+        if (!post) throw new ApiError(404, 'NOT_FOUND', 'Post não encontrado.')
+        const caption = `${post.caption ?? ''}
+
+${(post.hashtags ?? []).join(' ')}`.trim()
+        const mediaId = await publishCarousel(ig, post.slides ?? [], caption)
+        await db.from('social_posts').update({ ig_media_id: mediaId, status: 'publicado', published_at: new Date().toISOString(), scheduled_at: null, publish_error: null }).eq('id', post.id)
+        return json({ ok: true, data: { media_id: mediaId } })
+      }
+
+      case 'social_schedule': {
+        await db.from('social_posts').update({
+          scheduled_at: body.scheduled_at ? new Date(String(body.scheduled_at)).toISOString() : null,
+          publish_error: null,
+        }).eq('id', str(body.post_id, 64))
+        return json({ ok: true })
       }
 
       case 'prospect_campaign_launch': {

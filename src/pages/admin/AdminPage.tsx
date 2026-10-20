@@ -78,7 +78,7 @@ const CHART_TIP = {
 
 export default function AdminPage() {
   const { isAdmin, loading, session } = useAuth()
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(location.search).get('tab') as Tab) || 'overview')
   const [stats, setStats] = useState<any>(null)
   const [series, setSeries] = useState<any>(null)
   const [companies, setCompanies] = useState<any[]>([])
