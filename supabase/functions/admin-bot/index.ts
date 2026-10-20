@@ -3,8 +3,8 @@
 // - Número novo -> funil de vendas: nome -> negócio -> nicho -> trial/plano -> email -> conta criada -> link/QR de pagamento
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { serviceClient } from '../_shared/db.ts'
-import { parseIncoming, sendText, sendMedia, sendPresence } from '../_shared/evolution.ts'
-import { chatText } from '../_shared/nvidia.ts'
+import { parseIncoming, sendText, sendMedia, sendPresence, fetchMessageMedia } from '../_shared/evolution.ts'
+import { chatText, transcribeAudio, describeImage } from '../_shared/nvidia.ts'
 import { createCharge } from '../_shared/mercosulpay.ts'
 import { createCheckout } from '../_shared/stripe.ts'
 import { getSecret } from '../_shared/secrets.ts'
@@ -51,15 +51,42 @@ Deno.serve(async (req) => {
     const instanceName = cfg?.value?.instance_name
     const msg = parseIncoming(body)
     if (!instanceName || !msg || msg.instanceName !== instanceName || msg.fromMe) return json({ ok: true, ignored: true })
-    if (msg.type !== 'text' || !msg.text) {
+    let text = (msg.text ?? '').trim()
+
+    // áudio → transcreve; imagem → descreve pra IA; outros → recusa gentil
+    if (msg.type === 'audio') {
+      const media = await fetchMessageMedia(instanceName, msg.raw).catch(() => null)
+      const b64 = media?.base64 ?? media?.data
+      if (b64) {
+        try { text = (await transcribeAudio(String(b64), media?.mimetype ?? 'audio/ogg')).trim() } catch { text = '' }
+      }
+      await logMsg(db, msg.remoteJid, 'in', text ? `🎙 ${text}` : '[áudio não entendido]', 'audio')
+      if (!text) {
+        await sendAndLog(db, instanceName, msg.remoteJid, 'Não consegui entender o áudio 😕 manda de novo ou escreve rapidinho?')
+        return json({ ok: true })
+      }
+    } else if (msg.type === 'image') {
+      const media = await fetchMessageMedia(instanceName, msg.raw).catch(() => null)
+      const b64 = media?.base64 ?? media?.data
+      let desc = ''
+      if (b64) {
+        try { desc = await describeImage(`data:${media?.mimetype ?? 'image/jpeg'};base64,${b64}`, 'Descreva a imagem em uma frase objetiva em pt-BR.') } catch { /* segue sem descrição */ }
+      }
+      await logMsg(db, msg.remoteJid, 'in', `${msg.text ?? ''} [imagem${desc ? `: ${desc}` : ''}]`, 'image')
+      text = `[O cliente mandou uma imagem${desc ? `: ${desc}` : ''}${msg.text ? ` com a legenda: ${msg.text}` : ''}]`
+      if (!desc) {
+        await sendAndLog(db, instanceName, msg.remoteJid, 'Recebi sua imagem! 📸 Me conta o que precisa?')
+        return json({ ok: true })
+      }
+    } else if (msg.type !== 'text' || !text) {
       await logMsg(db, msg.remoteJid, 'in', `[${msg.type}]`, msg.type)
-      await sendAndLog(db, instanceName, msg.remoteJid, 'Por aqui só consigo ler texto por enquanto 🙂 me conta em palavras?')
+      await sendAndLog(db, instanceName, msg.remoteJid, 'Por aqui consigo ler texto, áudio e imagem 🙂 me conta em palavras ou manda um áudio?')
       return json({ ok: true })
+    } else {
+      await logMsg(db, msg.remoteJid, 'in', text)
     }
 
     const phone = msg.remoteJid.split('@')[0].replace(/\D/g, '')
-    const text = msg.text.trim()
-    await logMsg(db, msg.remoteJid, 'in', text)
 
     // empresa existente? -> modo suporte
     const { data: companies } = await db.from('companies')
@@ -131,6 +158,13 @@ async function salesStep(db: any, sess: any, text: string, phone: string): Promi
   const s = sess.data ?? {}
   const lower = text.toLowerCase()
 
+  const looksLikeQuestion = /\?|quanto|preço|preco|valor|como funciona|o que é|oq é|funciona|segur|confi|onde|quando|por ?que|cancel|testar|grátis|gratis|demo/i.test(lower)
+  const answerDoubt = async (q: string) => chatText([
+    { role: 'system', content: `Você é o assistente de vendas do IAstetic no WhatsApp — SaaS de IA pra estabelecimentos de beleza que atende clientes, agenda, remarca, cobra e faz follow-up sozinho no WhatsApp.
+Responde a dúvida em pt-BR, breve (2-3 frases), simpático com 1 emoji. Planos: Start R$97, Pro R$197, Studio R$397/mês — 7 dias grátis pra testar tudo. Não invente nada fora disso.` },
+    { role: 'user', content: q },
+  ], 280)
+
   const aiExtract = async (field: string, instruction: string): Promise<string | null> => {
     const out = await chatText([
       { role: 'system', content: `Extraia APENAS o valor pedido da mensagem. Responda só o valor ou "NADA".\n${instruction}` },
@@ -148,7 +182,10 @@ async function salesStep(db: any, sess: any, text: string, phone: string): Promi
 
     case 'name': {
       const name = await aiExtract('name', 'O nome da pessoa (pode ser nome próprio, apelido, ou primeiro nome). Se não houver nome claro, responda NADA.')
-      if (!name) return ['Me diz seu nome pra eu te chamar direitinho? 🙂']
+      if (!name) {
+        if (looksLikeQuestion) return [await answerDoubt(text), 'E me diz seu nome pra eu te chamar direitinho? 🙂']
+        return ['Me diz seu nome pra eu te chamar direitinho? 🙂']
+      }
       s.name = name.split(' ')[0]
       sess.stage = 'business'
       return [`Prazer, *${s.name}*! ✨\n\nQual o nome do seu estabelecimento?`]
@@ -169,7 +206,10 @@ async function salesStep(db: any, sess: any, text: string, phone: string): Promi
       else if (lower.includes('sal') || lower.includes('cabel')) nicheKey = '1'
       else if (lower.includes('unha') || lower.includes('manicure') || lower.includes('nail')) nicheKey = '2'
       else if (lower.includes('sobrancelha') || lower.includes('cílio') || lower.includes('cilio') || lower.includes('lash') || lower.includes('olhar')) nicheKey = '3'
-      if (!nicheKey) return ['Escolhe uma opção:\n\n1️⃣ Salão de beleza\n2️⃣ Manicure / nail designer\n3️⃣ Sobrancelhas & cílios\n4️⃣ Barbearia\n5️⃣ Clínica de estética']
+      if (!nicheKey) {
+        if (looksLikeQuestion) return [await answerDoubt(text), 'E o seu negócio é qual?\n\n1️⃣ Salão\n2️⃣ Manicure\n3️⃣ Sobrancelhas & cílios\n4️⃣ Barbearia\n5️⃣ Clínica de estética']
+        return ['Escolhe uma opção:\n\n1️⃣ Salão de beleza\n2️⃣ Manicure / nail designer\n3️⃣ Sobrancelhas & cílios\n4️⃣ Barbearia\n5️⃣ Clínica de estética']
+      }
       s.niche = NICHE_OPTS[nicheKey].id
       sess.stage = 'plan_choice'
       const { data: plans } = await db.from('plans').select('id,name,price_cents,features').eq('active', true).order('price_cents')
@@ -192,7 +232,10 @@ async function salesStep(db: any, sess: any, text: string, phone: string): Promi
 
     case 'email': {
       const email = await aiExtract('email', 'Um endereço de e-mail válido. Se não houver, responda NADA.')
-      if (!email || !email.includes('@')) return ['Me passa um e-mail válido pra criar sua conta? (ex.: voce@gmail.com)']
+      if (!email || !email.includes('@')) {
+        if (looksLikeQuestion) return [await answerDoubt(text), 'E qual e-mail posso usar pra criar sua conta?']
+        return ['Me passa um e-mail válido pra criar sua conta? (ex.: voce@gmail.com)']
+      }
       s.email = email.toLowerCase()
       // cria conta + empresa
       const created = await createAccountAndCompany(db, s, phone)

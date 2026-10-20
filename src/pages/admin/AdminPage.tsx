@@ -913,28 +913,30 @@ function AdminAssistantCard() {
 
   useEffect(() => () => { loopRef.current++; cancel(); player.current?.pause() }, [cancel])
 
-  // loop de escuta contínua — modo voz
+  // loop de escuta contínua — modo voz. Recursivo via token: não depende de `status`
+  // no effect (mudar pra 'listening' reexecutava o efeito e matava o onDone).
+  const listenOnce = async (token: number) => {
+    if (token !== loopRef.current) return
+    try {
+      setStatus('listening')
+      await startAuto({
+        silenceMs: 1400,
+        onDone: async (rec) => {
+          if (token !== loopRef.current) return
+          if (!rec || !rec.base64.length) { setStatus('idle'); return }
+          await handleVoice(rec.base64, rec.mime)
+          if (token === loopRef.current) listenOnce(token) // volta a ouvir
+        },
+      })
+    } catch { setMicError(true); setStatus('idle') }
+  }
+
   useEffect(() => {
-    if (mode !== 'voice' || status !== 'idle') return
-    const my = ++loopRef.current
-    let active = true
-    ;(async () => {
-      try {
-        await startAuto({
-          silenceMs: 1400,
-          onDone: async (rec) => {
-            if (!active || loopRef.current !== my) return
-            if (!rec || !rec.base64.length) { setStatus('idle'); return }
-            await handleVoice(rec.base64, rec.mime)
-            if (active && loopRef.current === my) setStatus('idle')
-          },
-        })
-        if (active) setStatus('listening')
-      } catch { setMicError(true); setStatus('idle') }
-    })()
-    return () => { active = false }
+    if (mode !== 'voice') return
+    const token = ++loopRef.current
+    listenOnce(token)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, status, retry])
+  }, [mode, retry])
 
   // saindo do modo voz, solta o microfone
   useEffect(() => { if (mode === 'text') { loopRef.current++; cancel(); player.current?.pause(); setStatus('idle') } }, [mode, cancel])
