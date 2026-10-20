@@ -66,7 +66,7 @@ export function useRecorder() {
 
   async function start() {
     if (recording) return
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
     streamRef.current = stream
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) ?? ''
     const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
@@ -118,10 +118,18 @@ export function useRecorder() {
 
   function ctxState() { return micCtx?.state ?? 'none' }
 
+  /** Diagnóstico da faixa de áudio capturada (qual mic, se está muda, sample rate). */
+  function trackInfo() {
+    const t = streamRef.current?.getAudioTracks()[0]
+    if (!t) return 'sem track'
+    const s = (t.getSettings?.() ?? {}) as { sampleRate?: number }
+    return `${t.label || 'mic?'} · ${t.muted ? 'TRACK MUDA' : 'track on'} · ${t.readyState} · ${s.sampleRate ?? '?'}Hz`
+  }
+
   async function cancel() {
     chunksRef.current = []
     await finish()
   }
 
-  return { recording, level, start, startAuto, stop, cancel, ctxState }
+  return { recording, level, start, startAuto, stop, cancel, ctxState, trackInfo }
 }

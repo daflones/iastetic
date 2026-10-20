@@ -898,7 +898,7 @@ function AdminAssistantCard() {
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle')
   const [micError, setMicError] = useState(false)
   const [retry, setRetry] = useState(0)
-  const { level, startAuto, cancel, ctxState } = useRecorder()
+  const { level, startAuto, cancel, ctxState, trackInfo } = useRecorder()
   const player = useRef<HTMLAudioElement | null>(null)
   const loopRef = useRef(0)
   const msgsRef = useRef(messages)
@@ -1030,7 +1030,12 @@ function AdminAssistantCard() {
           <p className="mt-5 text-xs font-medium text-ink-soft">{micError ? 'sem acesso ao microfone — toque pra tentar de novo' : STATUS_TXT[status]}</p>
           {lastAssistant && <p className="mt-2 text-[11px] text-ink-muted text-center max-w-sm line-clamp-2 italic">"{lastAssistant}"</p>}
           <p className="mt-3 text-[10px] text-ink-muted/70">diga “quero escrever com você” para mudar pro modo texto</p>
-          {status === 'listening' && <p className="mt-1 text-[9px] font-mono text-ink-muted/50">mic {ctxState()} · vol {(level / 10).toFixed(3)}</p>}
+          {status === 'listening' && (
+            <>
+              <p className="mt-1 text-[9px] font-mono text-ink-muted/50">mic {ctxState()} · vol {(level / 10).toFixed(3)}</p>
+              <p className="text-[9px] font-mono text-ink-muted/40">{trackInfo()}</p>
+            </>
+          )}
         </div>
       )}
 
