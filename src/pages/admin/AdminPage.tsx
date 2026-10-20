@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Building2, CreditCard, Loader2, Lock, RefreshCw, Shield, X,
   CheckCircle2, XCircle, QrCode, MessageSquareText, Send, Users, Sparkle,
   CalendarDays, Wallet, ChevronRight, Power, BrainCircuit, KeyRound, Crown, Plus, Pencil,
-  LayoutDashboard, TrendingUp, TrendingDown, Menu, Activity, Mic, Square, Bot, Image, Volume2,
+  LayoutDashboard, TrendingUp, TrendingDown, Menu, Activity, Mic, Bot, Image, Volume2,
   Target, MapPin, Globe, PhoneOff, Search, Megaphone, Trash2, LifeBuoy, Pause, Play,
 } from 'lucide-react'
 import {
@@ -440,7 +440,12 @@ export default function AdminPage() {
           {tab === 'plans' && <PlansCard />}
           {tab === 'prospect' && <ProspectCard />}
           {tab === 'support' && <SupportCard />}
-          {tab === 'whatsapp' && <AdminWhatsappCard />}
+          {tab === 'whatsapp' && (
+            <div className="space-y-4">
+              <AdminWhatsappCard />
+              <WaInboxCard />
+            </div>
+          )}
           {tab === 'assistant' && <AdminAssistantCard />}
           {tab === 'posts' && <SocialPostsTab />}
           {tab === 'integrations' && <SecretsCard />}
@@ -711,56 +716,328 @@ function AdminWhatsappCard() {
   )
 }
 
-function AdminAssistantCard() {
-  const [messages, setMessages] = useDraft<{ role: 'user' | 'assistant'; content: string }[]>('admin-assistant:msgs', [])
-  const [input, setInput] = useDraft('admin-assistant:input', '')
+type WaThread = { jid: string; phone: string; last: string; kind: string; dir: string; at: string; count: number; inbound: number }
+type WaMsg = { id: string; direction: 'in' | 'out'; content: string; kind: string; media_url?: string; source: string; created_at: string }
+type FuJob = { id: string; status: string; scheduled_at: string; sent_at?: string; sent_content?: string; error?: string; contacts?: { name?: string; phone?: string }; companies?: { name?: string }; followup_rules?: { name?: string; trigger?: string } }
+type FuRule = { id: string; name: string; trigger: string; active: boolean; delay_hours: number; companies?: { name?: string } }
+
+function WaInboxCard() {
+  const [sub, setSub] = useState<'chat' | 'campanhas' | 'followups'>('chat')
+  const [threads, setThreads] = useState<WaThread[]>([])
+  const [active, setActive] = useState<WaThread | null>(null)
+  const [msgs, setMsgs] = useState<WaMsg[]>([])
+  const [draft, setDraft] = useState('')
+  const [camps, setCamps] = useState<any[]>([])
+  const [fu, setFu] = useState<{ jobs: FuJob[]; rules: FuRule[] }>({ jobs: [], rules: [] })
   const [busy, setBusy] = useState(false)
-  const { recording, start: startRec, stop: stopRec } = useRecorder()
 
-  async function send() {
-    if (!input.trim() || busy) return
-    const q = input; setInput('')
-    const next = [...messages, { role: 'user' as const, content: q }]
-    setMessages(next); setBusy(true)
+  const loadThreads = async () => {
+    const r = await callFn<WaThread[]>('admin', { action: 'wa_threads' }).catch(() => [])
+    setThreads(r ?? [])
+  }
+  const loadMsgs = async (jid: string) => {
+    const r = await callFn<WaMsg[]>('admin', { action: 'wa_messages', jid }).catch(() => [])
+    setMsgs(r ?? [])
+  }
+  const loadCamps = async () => {
+    const r = await callFn<any[]>('admin', { action: 'prospect_campaigns' }).catch(() => [])
+    setCamps(r ?? [])
+  }
+  const loadFu = async () => {
+    const r = await callFn<{ jobs: FuJob[]; rules: FuRule[] }>('admin', { action: 'followups_admin' }).catch(() => ({ jobs: [], rules: [] }))
+    setFu(r)
+  }
+
+  useEffect(() => { loadThreads(); loadCamps(); loadFu() }, [])
+  useEffect(() => { if (active) loadMsgs(active.jid) }, [active?.jid])
+  // polling leve pra mensagens novas
+  useEffect(() => {
+    const t = setInterval(() => { loadThreads(); if (active) loadMsgs(active.jid) }, 15000)
+    return () => clearInterval(t)
+  }, [active?.jid])
+
+  async function sendMsg() {
+    const text = draft.trim()
+    if (!text || !active || busy) return
+    setBusy(true); setDraft('')
     try {
-      const r = await callFn<{ reply: string; transcript?: string | null }>('admin', { action: 'admin_assistant', message: q, history: next.slice(-10) })
-      setMessages([...next, { role: 'assistant', content: r.reply || '…' }])
-    } catch (e) { setMessages([...next, { role: 'assistant', content: `Erro: ${(e as Error).message}` }]) }
+      await callFn('admin', { action: 'wa_send', jid: active.jid, text })
+      await loadMsgs(active.jid); loadThreads()
+    } catch (e) { alert((e as Error).message); setDraft(text) }
     setBusy(false)
   }
 
-  async function toggleMic() {
-    if (busy) return
-    if (!recording) {
-      try { await startRec() } catch {
-        setMessages([...messages, { role: 'assistant' as const, content: 'Sem acesso ao microfone — libera a permissão no navegador.' }])
-      }
-      return
-    }
-    const rec = await stopRec()
-    if (!rec) return
-    setBusy(true)
-    try {
-      const r = await callFn<{ reply: string; transcript?: string | null }>('admin', { action: 'admin_assistant', audio: rec.base64, audio_mime: rec.mime, history: messages.slice(-10) })
-      setMessages([...messages, { role: 'user' as const, content: `Áudio: ${r.transcript || '(transcrição indisponível)'}` }, { role: 'assistant', content: r.reply || '…' }])
-    } catch (e) { setMessages([...messages, { role: 'assistant', content: `Erro no áudio: ${(e as Error).message}` }]) }
-    setBusy(false)
-  }
+  const FU_STATUS: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', sent: 'bg-emerald-100 text-emerald-700', failed: 'bg-red-100 text-red-600', cancelled: 'bg-slate-100 text-slate-500' }
 
   return (
-    <div className="card-lux max-w-2xl flex flex-col h-[560px]">
+    <div className="card-lux overflow-hidden">
+      <div className="p-4 border-b border-line flex items-center gap-2 flex-wrap">
+        <MessageSquareText className="h-4 w-4 text-brand-500" />
+        <p className="font-semibold text-sm">Inbox IAstetic</p>
+        <div className="ml-auto flex gap-1.5">
+          {(['chat', 'campanhas', 'followups'] as const).map(k => (
+            <button key={k} onClick={() => setSub(k)}
+              className={clsx('text-[11px] font-medium rounded-full px-3 py-1 transition', sub === k ? 'bg-brand-500 text-white' : 'bg-canvas text-ink-muted border border-line')}>
+              {k === 'chat' ? 'Conversas' : k === 'campanhas' ? 'Campanhas' : 'Follow-ups'}
+            </button>
+          ))}
+          <button className="btn-ghost !p-1.5" onClick={() => { loadThreads(); loadCamps(); loadFu(); if (active) loadMsgs(active.jid) }}><RefreshCw className="h-3.5 w-3.5" /></button>
+        </div>
+      </div>
+
+      {sub === 'chat' && (
+        <div className="flex h-[460px]">
+          {/* lista de conversas */}
+          <div className={clsx('w-full sm:w-64 sm:min-w-64 border-r border-line overflow-y-auto', active && 'hidden sm:block')}>
+            {threads.length === 0 && <p className="p-4 text-xs text-ink-muted">Nenhuma mensagem ainda — conversas do número do IAstetic aparecem aqui.</p>}
+            {threads.map(t => (
+              <button key={t.jid} onClick={() => setActive(t)}
+                className={clsx('w-full text-left px-4 py-3 border-b border-line/60 hover:bg-canvas transition', active?.jid === t.jid && 'bg-brand-50')}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{maskPhoneBR(t.phone ?? '') || t.jid.split('@')[0]}</p>
+                  <span className="text-[10px] text-ink-muted shrink-0">{new Date(t.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <p className="text-xs text-ink-muted truncate mt-0.5">{t.dir === 'out' ? 'Você: ' : ''}{t.last}</p>
+              </button>
+            ))}
+          </div>
+          {/* thread */}
+          <div className={clsx('flex-1 flex flex-col', !active && 'hidden sm:flex')}>
+            {!active ? (
+              <div className="flex-1 grid place-items-center text-ink-muted text-xs">seleciona uma conversa</div>
+            ) : (
+              <>
+                <div className="px-4 py-2.5 border-b border-line flex items-center gap-2">
+                  <button className="sm:hidden btn-ghost !p-1" onClick={() => setActive(null)}><ChevronRight className="h-4 w-4 rotate-180" /></button>
+                  <p className="text-sm font-medium">{maskPhoneBR(active.phone ?? '') || active.jid.split('@')[0]}</p>
+                  <span className="text-[10px] text-ink-muted">{active.count} msgs</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-canvas/50">
+                  {msgs.map(m => (
+                    <div key={m.id} className={clsx('max-w-[80%] rounded-2xl px-3 py-2 text-xs whitespace-pre-wrap',
+                      m.direction === 'out' ? 'bg-brand-500 text-white ml-auto' : 'bg-white border border-line')}>
+                      {m.kind !== 'text' && <span className="text-[9px] uppercase tracking-wide opacity-60 block">{m.kind}</span>}
+                      {m.content}
+                      <span className="block text-[9px] opacity-60 mt-1">{m.source === 'bot' ? '🤖 ' : m.source === 'campaign' ? '📣 ' : ''}{new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-2.5 border-t border-line flex gap-2">
+                  <input className="input flex-1 !py-2 text-xs" placeholder="Responder como IAstetic…" value={draft}
+                    onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMsg()} />
+                  <button className="btn-primary !px-3.5 !py-2" onClick={sendMsg} disabled={busy || !draft.trim()}>
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {sub === 'campanhas' && (
+        <div className="p-4 space-y-2 max-h-[460px] overflow-y-auto">
+          {camps.length === 0 && <p className="text-xs text-ink-muted">Nenhuma campanha — cria uma na aba Prospecção ou pede pro assistente por voz.</p>}
+          {camps.map(c => (
+            <div key={c.id} className="rounded-xl border border-line p-3.5 flex items-center gap-3 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{c.name}</p>
+                <p className="text-[11px] text-ink-muted truncate">{c.message}</p>
+              </div>
+              <span className={clsx('badge text-[10px]', c.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : c.status === 'sending' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500')}>{c.status}</span>
+              <span className="text-[11px] text-ink-muted">{c.sent_count ?? 0} enviados · {c.failed ?? c.failed_count ?? 0} falhas · {c.pending ?? 0} na fila</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sub === 'followups' && (
+        <div className="p-4 space-y-4 max-h-[460px] overflow-y-auto">
+          <div>
+            <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Regras ativas por empresa</p>
+            {fu.rules.length === 0 && <p className="text-xs text-ink-muted">Nenhuma regra de follow-up criada.</p>}
+            <div className="space-y-1.5">
+              {fu.rules.map(r => (
+                <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg bg-canvas px-3 py-2">
+                  <span className={clsx('h-1.5 w-1.5 rounded-full', r.active ? 'bg-emerald-500' : 'bg-slate-300')} />
+                  <span className="font-medium">{r.name}</span>
+                  <span className="text-ink-muted">{r.companies?.name} · {r.trigger} · {r.delay_hours}h</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Envios recentes</p>
+            <div className="space-y-1.5">
+              {fu.jobs.map(j => (
+                <div key={j.id} className="rounded-lg border border-line px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={clsx('badge text-[10px]', FU_STATUS[j.status] ?? 'bg-slate-100 text-slate-500')}>{j.status}</span>
+                    <span className="font-medium">{j.contacts?.name ?? j.contacts?.phone ?? '—'}</span>
+                    <span className="text-ink-muted">{j.companies?.name} · {j.followup_rules?.name}</span>
+                    <span className="ml-auto text-ink-muted">{new Date(j.sent_at ?? j.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  {j.sent_content && <p className="text-ink-muted mt-1 truncate">{j.sent_content}</p>}
+                  {j.error && <p className="text-red-500 mt-1 truncate">{j.error}</p>}
+                </div>
+              ))}
+              {fu.jobs.length === 0 && <p className="text-xs text-ink-muted">Nenhum envio ainda.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AdminAssistantCard() {
+  type Msg = { role: 'user' | 'assistant'; content: string }
+  const [messages, setMessages] = useDraft<Msg[]>('admin-assistant:msgs', [])
+  const [input, setInput] = useDraft('admin-assistant:input', '')
+  const [mode, setMode] = useDraft<'voice' | 'text'>('admin-assistant:mode', 'voice')
+  const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle')
+  const [micError, setMicError] = useState(false)
+  const [retry, setRetry] = useState(0)
+  const { level, startAuto, cancel } = useRecorder()
+  const player = useRef<HTMLAudioElement | null>(null)
+  const loopRef = useRef(0)
+  const msgsRef = useRef(messages)
+  msgsRef.current = messages
+
+  const STATUS_TXT: Record<string, string> = {
+    idle: 'toque no núcleo para falar',
+    listening: 'ouvindo… fala comigo',
+    thinking: 'processando…',
+    speaking: 'falando…',
+  }
+
+  useEffect(() => () => { loopRef.current++; cancel(); player.current?.pause() }, [cancel])
+
+  // loop de escuta contínua — modo voz
+  useEffect(() => {
+    if (mode !== 'voice' || status !== 'idle') return
+    const my = ++loopRef.current
+    let active = true
+    ;(async () => {
+      try {
+        await startAuto({
+          silenceMs: 1400,
+          onDone: async (rec) => {
+            if (!active || loopRef.current !== my) return
+            if (!rec || !rec.base64.length) { setStatus('idle'); return }
+            await handleVoice(rec.base64, rec.mime)
+            if (active && loopRef.current === my) setStatus('idle')
+          },
+        })
+        if (active) setStatus('listening')
+      } catch { setMicError(true); setStatus('idle') }
+    })()
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, status, retry])
+
+  // saindo do modo voz, solta o microfone
+  useEffect(() => { if (mode === 'text') { loopRef.current++; cancel(); player.current?.pause(); setStatus('idle') } }, [mode, cancel])
+
+  async function handleVoice(base64: string, mime: string) {
+    setStatus('thinking')
+    try {
+      const r = await callFn<{ reply: string; transcript?: string | null; audio?: string | null }>('admin', {
+        action: 'admin_assistant', audio: base64, audio_mime: mime, voice: true, history: msgsRef.current.slice(-20),
+      })
+      const t = (r.transcript ?? '').trim()
+      if (/quero escrever|modo texto|prefiro digitar|vou digitar|quero digitar/i.test(t)) {
+        setMessages([...msgsRef.current, { role: 'user', content: `🎙 ${t}` }, { role: 'assistant', content: 'Modo texto ativado — manda.' }])
+        setMode('text'); return
+      }
+      setMessages([...msgsRef.current, { role: 'user', content: `🎙 ${t || '(áudio)'}` }, { role: 'assistant', content: r.reply || '…' }])
+      if (r.audio) {
+        setStatus('speaking')
+        await new Promise<void>(res => {
+          const a = new Audio(r.audio!)
+          player.current = a
+          a.onended = () => res(); a.onerror = () => res()
+          a.play().catch(() => res())
+        })
+      }
+    } catch (e) {
+      setMessages([...msgsRef.current, { role: 'assistant', content: `Erro: ${(e as Error).message}` }])
+    }
+  }
+
+  async function send() {
+    const q = input.trim()
+    if (!q) return
+    setInput('')
+    const next = [...messages, { role: 'user' as const, content: q }]
+    setMessages(next); setStatus('thinking')
+    try {
+      const r = await callFn<{ reply: string; audio?: string | null }>('admin', { action: 'admin_assistant', message: q, voice: false, history: next.slice(-20) })
+      setMessages([...next, { role: 'assistant', content: r.reply || '…' }])
+    } catch (e) { setMessages([...next, { role: 'assistant', content: `Erro: ${(e as Error).message}` }]) }
+    setStatus('idle')
+  }
+
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')?.content
+
+  return (
+    <div className="card-lux max-w-2xl flex flex-col h-[560px] overflow-hidden">
       <div className="p-4 border-b border-line flex items-center gap-2">
         <BrainCircuit className="h-4 w-4 text-brand-500" />
-        <p className="font-semibold text-sm">Assistente do admin</p>
-        <p className="text-[11px] text-ink-muted ml-auto">relatórios • empresas • assinaturas • disparos</p>
+        <p className="font-semibold text-sm">Assistente executivo</p>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={() => setMode('voice')}
+            className={clsx('text-[10px] font-medium rounded-full px-2.5 py-1 transition flex items-center gap-1', mode === 'voice' ? 'bg-brand-500 text-white' : 'bg-canvas text-ink-muted border border-line')}>
+            <Mic className="h-3 w-3" /> voz
+          </button>
+          <button onClick={() => setMode('text')}
+            className={clsx('text-[10px] font-medium rounded-full px-2.5 py-1 transition', mode === 'text' ? 'bg-brand-500 text-white' : 'bg-canvas text-ink-muted border border-line')}>
+            texto
+          </button>
+        </div>
       </div>
+
+      {mode === 'voice' && (
+        <div className="relative flex flex-col items-center justify-center py-6 px-4 border-b border-line bg-gradient-to-b from-brand-50/60 to-transparent">
+          {/* anéis neurais */}
+          <div className="relative grid place-items-center">
+            {status === 'listening' && (
+              <>
+                <span className="absolute h-36 w-36 rounded-full bg-brand-400/20 animate-ping" style={{ animationDuration: '2.2s' }} />
+                <span className="absolute h-28 w-28 rounded-full bg-brand-400/25 animate-ping" style={{ animationDuration: '1.6s' }} />
+              </>
+            )}
+            {status === 'thinking' && <span className="absolute h-28 w-28 rounded-full border-2 border-brand-400/40 border-t-brand-500 animate-spin" />}
+            {status === 'speaking' && <span className="absolute h-32 w-32 rounded-full bg-brand-500/15 animate-pulse" />}
+            <button
+              onClick={() => { setMicError(false); setRetry(r => r + 1) }}
+              className="relative h-24 w-24 rounded-full grid place-items-center transition-transform shadow-xl shadow-brand-500/30"
+              style={{
+                background: 'radial-gradient(circle at 35% 30%, #c4b5fd, #8b5cf6 55%, #5b21b6)',
+                transform: `scale(${1 + level * 0.25})`,
+              }}>
+              {status === 'listening'
+                ? <Activity className="h-8 w-8 text-white" style={{ opacity: 0.5 + level * 0.5 }} />
+                : status === 'thinking'
+                  ? <Loader2 className="h-8 w-8 text-white animate-spin" />
+                  : status === 'speaking'
+                    ? <Volume2 className="h-8 w-8 text-white animate-pulse" />
+                    : <Mic className="h-8 w-8 text-white" />}
+            </button>
+          </div>
+          <p className="mt-5 text-xs font-medium text-ink-soft">{micError ? 'sem acesso ao microfone — toque pra tentar de novo' : STATUS_TXT[status]}</p>
+          {lastAssistant && <p className="mt-2 text-[11px] text-ink-muted text-center max-w-sm line-clamp-2 italic">"{lastAssistant}"</p>}
+          <p className="mt-3 text-[10px] text-ink-muted/70">diga “quero escrever com você” para mudar pro modo texto</p>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center pt-10">
+        {messages.length === 0 && mode === 'text' && (
+          <div className="text-center pt-8">
             <BrainCircuit className="h-10 w-10 text-brand-300 mx-auto" />
-            <p className="text-sm text-ink-muted mt-3">Pergunte qualquer coisa sobre a plataforma:</p>
+            <p className="text-sm text-ink-muted mt-3">Sou seu executivo — pergunta ou manda executar:</p>
             <div className="flex gap-2 flex-wrap justify-center mt-3">
-              {['Resumo do mês', 'Empresas em trial', 'Aprove a assinatura do Studio X', 'Envie follow-up de cobrança pra quem tá pendente'].map(s => (
+              {['Resumo do mês', 'Quantos leads temos?', 'Cria uma campanha pra barbearias sem site', 'Envie cobrança pra quem tá pendente', 'O que chegou no WhatsApp hoje?'].map(s => (
                 <button key={s} className="badge bg-brand-50 text-brand-700 hover:bg-brand-100 text-xs" onClick={() => setInput(s)}>{s}</button>
               ))}
             </div>
@@ -771,16 +1048,15 @@ function AdminAssistantCard() {
             {m.content}
           </div>
         ))}
-        {busy && <div className="bg-canvas border border-line rounded-2xl px-4 py-2.5 text-sm w-fit"><Loader2 className="h-4 w-4 animate-spin text-brand-500" /></div>}
+        {status === 'thinking' && mode === 'text' && <div className="bg-canvas border border-line rounded-2xl px-4 py-2.5 text-sm w-fit"><Loader2 className="h-4 w-4 animate-spin text-brand-500" /></div>}
       </div>
-      <div className="p-3 border-t border-line flex gap-2">
-        <input className="input flex-1" placeholder={recording ? 'Ouvindo… clique no ⬛ para enviar' : 'Pergunte ou mande executar…'} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={recording} />
-        <button onClick={toggleMic} disabled={busy} title={recording ? 'Parar e enviar' : 'Falar'}
-          className={clsx('!px-3.5 rounded-xl transition-all', recording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : 'btn-outline')}>
-          {recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />}
-        </button>
-        <button className="btn-primary !px-4" onClick={send} disabled={busy || !input.trim() || recording}><Send className="h-4 w-4" /></button>
-      </div>
+
+      {mode === 'text' && (
+        <div className="p-3 border-t border-line flex gap-2">
+          <input className="input flex-1" placeholder="Pergunte ou mande executar…" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} />
+          <button className="btn-primary !px-4" onClick={send} disabled={!input.trim() || status === 'thinking'}><Send className="h-4 w-4" /></button>
+        </div>
+      )}
     </div>
   )
 }

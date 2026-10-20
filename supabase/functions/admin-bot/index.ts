@@ -28,6 +28,16 @@ const NICHE_OPTS: Record<string, { id: string; name: string; emoji: string; defa
 }
 const NICHE_BY_ID = Object.fromEntries(Object.entries(NICHE_OPTS).map(([k, v]) => [v.id, { key: k, ...v }]))
 
+async function logMsg(db: any, jid: string, direction: 'in' | 'out', content: string | null, kind = 'text', source = 'bot', media_url?: string) {
+  try {
+    await db.from('admin_messages').insert({ remote_jid: jid, phone: jid.split('@')[0].replace(/\D/g, ''), direction, kind, content, media_url, source })
+  } catch { /* tabela pode não existir ainda */ }
+}
+async function sendAndLog(db: any, instance: string, jid: string, text: string) {
+  await sendText(instance, jid, text)
+  await logMsg(db, jid, 'out', text)
+}
+
 Deno.serve(async (req) => {
   const pre = cors(req); if (pre) return pre
   try {
@@ -42,12 +52,14 @@ Deno.serve(async (req) => {
     const msg = parseIncoming(body)
     if (!instanceName || !msg || msg.instanceName !== instanceName || msg.fromMe) return json({ ok: true, ignored: true })
     if (msg.type !== 'text' || !msg.text) {
-      await sendText(instanceName, msg.remoteJid, 'Por aqui só consigo ler texto por enquanto 🙂 me conta em palavras?')
+      await logMsg(db, msg.remoteJid, 'in', `[${msg.type}]`, msg.type)
+      await sendAndLog(db, instanceName, msg.remoteJid, 'Por aqui só consigo ler texto por enquanto 🙂 me conta em palavras?')
       return json({ ok: true })
     }
 
     const phone = msg.remoteJid.split('@')[0].replace(/\D/g, '')
     const text = msg.text.trim()
+    await logMsg(db, msg.remoteJid, 'in', text)
 
     // empresa existente? -> modo suporte
     const { data: companies } = await db.from('companies')
@@ -86,8 +98,11 @@ Deno.serve(async (req) => {
     await db.from('platform_settings').upsert({ key: sessKey, value: sess })
 
     for (const part of reply) {
-      await sendText(instanceName, msg.remoteJid, part)
-      if (part.qr) await sendMedia(instanceName, msg.remoteJid, part.qr, 'QR Pix — pague escaneando ou use o código acima 👆').catch(() => {})
+      await sendAndLog(db, instanceName, msg.remoteJid, String(part))
+      if (part.qr) {
+        await sendMedia(instanceName, msg.remoteJid, part.qr, 'QR Pix — pague escaneando ou use o código acima 👆').catch(() => {})
+        await logMsg(db, msg.remoteJid, 'out', 'QR Pix — pague escaneando ou use o código acima 👆', 'image', 'bot', part.qr)
+      }
     }
     return json({ ok: true, mode: 'sales' })
   } catch (e) { return errorResponse(e) }
@@ -108,6 +123,7 @@ Se pedirem algo que exige ação no painel, oriente o caminho (ex.: "no app, em 
     { role: 'user', content: text },
   ], 500)
   await sendText(instance, jid, answer)
+  await logMsg(db, jid, 'out', answer)
 }
 
 // ---------- funil de vendas (máquina de estados) ----------

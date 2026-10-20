@@ -248,15 +248,22 @@ Deno.serve(async (req) => {
 
       // ---------- assistente IA do admin ----------
       case 'admin_assistant': {
-        let msg = str(body.message ?? body.question, 2000)
+        let msg = str(body.message ?? body.question, 4000)
         let transcript: string | null = null
         if (!msg && body.audio) {
           transcript = await transcribeAudio(String(body.audio), str(body.audio_mime, 100) || 'audio/webm')
-          msg = transcript.slice(0, 2000)
+          msg = transcript.slice(0, 4000)
         }
         if (!msg) throw new ApiError(400, 'EMPTY', 'Não entendi o áudio — tenta falar de novo ou escreve.')
         const reply = await runAdminAssistant(db, msg, body.history ?? [])
-        return json({ ok: true, data: { reply, transcript } })
+        let audio: string | null = null
+        if (body.voice) {
+          try {
+            const tts = await synthesizeSpeech(reply.slice(0, 1200))
+            audio = `data:${tts.mime};base64,${tts.base64}`
+          } catch { /* TTS falhou — responde só texto */ }
+        }
+        return json({ ok: true, data: { reply, transcript, audio } })
       }
 
       // ================= PROSPECÇÃO =================
@@ -389,6 +396,41 @@ Deno.serve(async (req) => {
           out.push({ ...c, pending: pending ?? 0, failed: failed ?? 0, total: total ?? 0 })
         }
         return json({ ok: true, data: out })
+      }
+
+      // ================= INBOX DO WHATSAPP DO ADMIN =================
+      case 'wa_threads': {
+        const { data } = await db.from('admin_messages').select('remote_jid,phone,content,kind,direction,created_at').order('created_at', { ascending: false }).limit(1500)
+        const byJid: Record<string, any> = {}
+        for (const m of data ?? []) {
+          if (!byJid[m.remote_jid]) byJid[m.remote_jid] = { jid: m.remote_jid, phone: m.phone, last: m.content, kind: m.kind, dir: m.direction, at: m.created_at, count: 0, inbound: 0 }
+          byJid[m.remote_jid].count++
+          if (m.direction === 'in') byJid[m.remote_jid].inbound++
+        }
+        return json({ ok: true, data: Object.values(byJid) })
+      }
+      case 'wa_messages': {
+        const jid = str(body.jid, 80)
+        if (!jid) throw new ApiError(400, 'EMPTY', 'jid obrigatório.')
+        const { data } = await db.from('admin_messages').select('*').eq('remote_jid', jid).order('created_at').limit(300)
+        return json({ ok: true, data: data ?? [] })
+      }
+      case 'wa_send': {
+        const inst = await adminInstance(db)
+        const raw = str(body.jid || body.phone, 80)
+        const text = str(body.text, 2000)
+        if (!raw || !text) throw new ApiError(400, 'EMPTY', 'Destino e texto obrigatórios.')
+        const jid = raw.includes('@') ? raw : `${raw.replace(/\D/g, '')}@s.whatsapp.net`
+        await sendText(inst, jid, text)
+        await db.from('admin_messages').insert({ remote_jid: jid, phone: jid.split('@')[0].replace(/\D/g, ''), direction: 'out', content: text, source: 'admin' })
+        return json({ ok: true })
+      }
+      case 'followups_admin': {
+        const [{ data: jobs }, { data: rules }] = await Promise.all([
+          db.from('followup_jobs').select('id,status,scheduled_at,sent_at,sent_content,error,contacts(name,phone),companies(name),followup_rules(name,trigger)').order('scheduled_at', { ascending: false }).limit(120),
+          db.from('followup_rules').select('id,name,trigger,active,delay_hours,companies(name)').limit(200),
+        ])
+        return json({ ok: true, data: { jobs: jobs ?? [], rules: rules ?? [] } })
       }
 
       // ================= POSTS DE INSTAGRAM (Marqueteira) =================
@@ -779,25 +821,37 @@ const ADMIN_TOOLS = [
   { type: 'function', function: { name: 'company_detail', description: 'Detalhes de uma empresa: contatos, serviços, agendamentos, pagamentos', parameters: { type: 'object', properties: { company_id: { type: 'string' }, name: { type: 'string', description: 'busca por nome se não souber o id' } } } } },
   { type: 'function', function: { name: 'send_company_whatsapp', description: 'Envia mensagem WhatsApp do admin para uma empresa (follow-up, cobrança, aviso)', parameters: { type: 'object', properties: { company_id: { type: 'string' }, message: { type: 'string' } }, required: ['company_id', 'message'] } } },
   { type: 'function', function: { name: 'set_subscription', description: 'Aprovar/rejeitar/estender assinatura de empresa', parameters: { type: 'object', properties: { company_id: { type: 'string' }, mode: { type: 'string', enum: ['approve', 'reject', 'extend_trial', 'past_due'] }, days: { type: 'number' } }, required: ['company_id', 'mode'] } } },
+  { type: 'function', function: { name: 'whatsapp_send', description: 'Envia WhatsApp do numero IAstetic pra qualquer telefone (lead, empresa, pessoa). Use pra falar com alguem ou responder conversa do inbox.', parameters: { type: 'object', properties: { phone: { type: 'string', description: 'DDD+numero, ex 11987654321' }, message: { type: 'string' } }, required: ['phone', 'message'] } } },
+  { type: 'function', function: { name: 'whatsapp_read', description: 'Le as conversas recentes do WhatsApp do admin ou o historico com um numero especifico', parameters: { type: 'object', properties: { phone: { type: 'string', description: 'opcional — filtra uma conversa' }, limit: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'campaign_create', description: 'Cria campanha de disparo WhatsApp pra leads prospectados (rascunho — depois use campaign_launch)', parameters: { type: 'object', properties: { name: { type: 'string' }, message: { type: 'string', description: 'texto com variaveis {nome} {cidade} {nicho}' }, audience: { type: 'string', enum: ['no_site_whatsapp', 'all_valid'] }, interval_sec: { type: 'number' } }, required: ['name', 'message'] } } },
+  { type: 'function', function: { name: 'campaign_launch', description: 'Dispara uma campanha criada — enfileira envios pros leads elegiveis', parameters: { type: 'object', properties: { name: { type: 'string', description: 'nome da campanha (ou parte dele)' }, interval_sec: { type: 'number' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'campaign_list', description: 'Lista campanhas de disparo com status e contadores', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'prospect_summary', description: 'Resumo da prospeccao: leads por status/nicho/cidade, campanhas ativas', parameters: { type: 'object', properties: {} } } },
 ]
 
-const ADMIN_PROMPT = `Você é a assistente interna do administrador da plataforma IAstetic — um SaaS de IA para estabelecimentos de beleza (salões, manicure, olhar/cílios).
-Você ajuda o dono da plataforma a: ver relatórios e resumos, encontrar empresas, aprovar/rejeitar assinaturas, e enviar mensagens WhatsApp às empresas (cobrança, follow-up, suporte).
+const ADMIN_PROMPT = `Você é o assistente executivo do administrador do IAstetic — tipo um Jarvis: proativo, direto, com contexto total da operação.
+O IAstetic é um SaaS de IA para estabelecimentos de beleza (salões, manicure, olhar/cílios, barbearias, clínicas).
+Você pode:
+- Relatórios e métricas da plataforma (empresas, receita, assinaturas)
+- Buscar/ver detalhes de empresas, aprovar/estender assinaturas
+- WhatsApp do admin (número do IAstetic): ler conversas do inbox, enviar mensagem pra qualquer número
+- Prospecção: resumo de leads, criar campanhas de disparo e lançá-las
 Regras:
-- Português brasileiro, direto e executivo. Markdown leve (**negrito**, listas com -).
-- Valores sempre em R$ formatado. Datas em formato brasileiro.
-- NUNCA invente números — use as ferramentas para consultar dados reais.
-- Para enviar WhatsApp, a empresa precisa ter whatsapp_public/phone — se falhar, avise.
-- Não exponha ids técnicos, JSON ou nomes de campos crus.`
+- Português brasileiro, executivo e natural — como um sócio falando. Markdown leve.
+- Respostas CURTAS (2-5 frases) — a conversa é por voz, respostas longas cansam.
+- NUNCA invente números — use as ferramentas pra dados reais.
+- Ao criar campanha: confirme nome, público e mensagem antes de lançar. Público padrão: leads com WhatsApp válido sem site.
+- Ao mandar WhatsApp, confirme o número. Se pedir pra responder alguém do inbox, leia a conversa antes.
+- Não exponha ids, JSON ou nomes de campos crus.`
 
 async function runAdminAssistant(db: any, question: string, history: { role: string; content: string }[]): Promise<string> {
   const messages: ChatMessage[] = [
     { role: 'system', content: ADMIN_PROMPT },
-    ...history.slice(-10).map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+    ...history.slice(-20).map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
     { role: 'user', content: question },
   ]
   for (let round = 0; round < 6; round++) {
-    const { message } = await chat({ messages, tools: ADMIN_TOOLS, maxTokens: 900 })
+    const { message } = await chat({ messages, tools: ADMIN_TOOLS, maxTokens: 2000 })
     messages.push(message)
     const calls = message.tool_calls ?? []
     if (!calls.length) return (message.content ?? '').trim() || 'Sem resposta — tenta de novo?'
@@ -856,6 +910,7 @@ async function runAdminTool(db: any, name: string, args: any): Promise<unknown> 
       const phone = c?.whatsapp_public ?? c?.phone
       if (!phone) return { erro: 'empresa sem WhatsApp cadastrado' }
       await sendText(cfg.value.instance_name, phone, args.message)
+      await db.from('admin_messages').insert({ remote_jid: `${String(phone).replace(/\D/g, '')}@s.whatsapp.net`, phone: String(phone).replace(/\D/g, ''), direction: 'out', content: args.message, source: 'admin' }).catch(() => {})
       return { enviado: true, para: c?.name }
     }
     case 'set_subscription': {
@@ -866,6 +921,74 @@ async function runAdminTool(db: any, name: string, args: any): Promise<unknown> 
       else if (args.mode === 'past_due') patch.subscription_status = 'past_due'
       await db.from('companies').update(patch).eq('id', args.company_id)
       return { atualizado: true, modo: args.mode }
+    }
+    case 'whatsapp_send': {
+      const inst = await adminInstance(db)
+      const phone = String(args.phone ?? '').replace(/\D/g, '')
+      if (!phone || !args.message) return { erro: 'telefone e mensagem obrigatórios' }
+      const jid = `${phone}@s.whatsapp.net`
+      await sendText(inst, jid, args.message)
+      await db.from('admin_messages').insert({ remote_jid: jid, phone, direction: 'out', content: args.message, source: 'admin' })
+      return { enviado: true, para: phone }
+    }
+    case 'whatsapp_read': {
+      if (args.phone) {
+        const phone = String(args.phone).replace(/\D/g, '')
+        const { data } = await db.from('admin_messages').select('direction,content,created_at').ilike('remote_jid', `%${phone}%`).order('created_at', { ascending: false }).limit(Math.min(args.limit ?? 15, 40))
+        return { conversa: (data ?? []).reverse().map((m: any) => `${m.direction === 'in' ? 'eles' : 'você'}: ${m.content}`) }
+      }
+      const { data } = await db.from('admin_messages').select('remote_jid,phone,content,direction,created_at').order('created_at', { ascending: false }).limit(200)
+      const threads: Record<string, any> = {}
+      for (const m of data ?? []) if (!threads[m.remote_jid]) threads[m.remote_jid] = m
+      return { conversas_recentes: Object.values(threads).slice(0, 10).map((m: any) => `${m.phone}: ${m.direction === 'in' ? 'recebeu' : 'enviou'} "${(m.content ?? '').slice(0, 80)}"`) }
+    }
+    case 'campaign_create': {
+      if (!args.name || !args.message) return { erro: 'nome e mensagem obrigatórios' }
+      await db.from('prospect_campaigns').insert({
+        name: String(args.name).slice(0, 80), message: String(args.message).slice(0, 2000),
+        audience: args.audience === 'all_valid' ? 'all_valid' : 'no_site_whatsapp',
+        interval_sec: Math.min(Math.max(Number(args.interval_sec) || 45, 15), 600), vary_messages: true,
+      })
+      return { criada: true, nome: args.name, aviso: 'rascunho — use campaign_launch pra disparar' }
+    }
+    case 'campaign_launch': {
+      const { data: found } = await db.from('prospect_campaigns').select('*').ilike('name', `%${args.name}%`).order('created_at', { ascending: false }).limit(1)
+      const camp = found?.[0]
+      if (!camp) return { erro: 'campanha não encontrada' }
+      await adminInstance(db)
+      let q = db.from('prospect_leads').select('id,phone').not('phone', 'is', null).eq('whatsapp_valid', true)
+      if (camp.audience === 'no_site_whatsapp') q = q.eq('has_site', false)
+      q = q.in('status', ['novo', 'contatado']).limit(500)
+      const { data: leads } = await q
+      const intervalSec = Math.min(Math.max(Number(args.interval_sec ?? camp.interval_sec) || 45, 15), 600)
+      const jobs = (leads ?? []).map((l: any, i: number) => ({
+        campaign_id: camp.id, lead_id: l.id, phone: l.phone,
+        scheduled_at: new Date(Date.now() + i * intervalSec * 1000).toISOString(),
+      }))
+      if (jobs.length) await db.from('prospect_jobs').upsert(jobs, { onConflict: 'campaign_id,phone', ignoreDuplicates: true })
+      await db.from('prospect_campaigns').update({ status: 'sending' }).eq('id', camp.id)
+      return { disparada: true, campanha: camp.name, envios_na_fila: jobs.length, intervalo_segundos: intervalSec }
+    }
+    case 'campaign_list': {
+      const { data: camps } = await db.from('prospect_campaigns').select('id,name,audience,status,sent_count,failed_count,created_at').order('created_at', { ascending: false }).limit(20)
+      const out = []
+      for (const c of camps ?? []) {
+        const { count: pending } = await db.from('prospect_jobs').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id).eq('status', 'pending')
+        out.push({ nome: c.name, status: c.status, enviados: c.sent_count, falhas: c.failed_count, na_fila: pending ?? 0 })
+      }
+      return { campanhas: out }
+    }
+    case 'prospect_summary': {
+      const { data: leads } = await db.from('prospect_leads').select('status,niche,city,whatsapp_valid,has_site').limit(2000)
+      const byStatus: Record<string, number> = {}, byNiche: Record<string, number> = {}
+      let waValid = 0, semSite = 0
+      for (const l of leads ?? []) {
+        byStatus[l.status] = (byStatus[l.status] ?? 0) + 1
+        byNiche[l.niche] = (byNiche[l.niche] ?? 0) + 1
+        if (l.whatsapp_valid) waValid++
+        if (l.has_site === false) semSite++
+      }
+      return { total_leads: leads?.length ?? 0, por_status: byStatus, por_nicho: byNiche, whatsapp_validos: waValid, sem_site: semSite }
     }
     default: return { erro: 'ferramenta desconhecida' }
   }
