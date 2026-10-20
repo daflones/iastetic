@@ -1,7 +1,7 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { requireCompany, serviceClient } from '../_shared/db.ts'
 import { chat, synthesizeSpeech, transcribeAudio, logUsage, generateImage, type ChatMessage } from '../_shared/nvidia.ts'
-import { tryConsume, quotaStatus } from '../_shared/quota.ts'
+import { tryConsume, quotaStatus, QUOTA_RESOURCES } from '../_shared/quota.ts'
 
 const ASSISTANT_TOOLS = [
   {
@@ -204,6 +204,12 @@ Deno.serve(async (req) => {
     const { companyId, name, user } = await requireCompany(req)
     const db = serviceClient()
     const body = await req.json().catch(() => ({}))
+    // status de uso do plano pra barra acima do chat
+    if (body.action === 'quota_status') {
+      const out: Record<string, unknown> = {}
+      for (const res of Object.keys(QUOTA_RESOURCES)) out[res] = await quotaStatus(db, companyId, res)
+      return json({ ok: true, data: out })
+    }
     let message = (str(body.message, 1000) || str(body.question, 1000)).trim()
     const wantVoice = body.voice === true
     const threadId = str(body.thread_id, 64)

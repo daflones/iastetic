@@ -22,11 +22,14 @@ const Ctx = createContext<AuthState>({
 
 const ALL_FEATURES = { audio: true, images: true, payments: true, assistant: true, followups: true, priority: true }
 
-/** Trial libera tudo por 7 dias; depois vale o que o plano contratado permite. */
+/** Trial libera tudo por 7 dias; depois vale o que o plano contratado permite. Empresa sem plano (cortesia/admin) não tem bloqueio. */
 function effectiveFeatures(company: Company | null, plan: Plan | null): Record<string, boolean> {
   const trial = company?.subscription_status === 'trial' && company.trial_until && new Date(company.trial_until) > new Date()
-  if (trial) return ALL_FEATURES
-  return (plan?.features as Record<string, boolean>) ?? {}
+  if (trial || !plan) return ALL_FEATURES
+  const f = plan.features as unknown
+  // planos salvos pelo admin guardam features como array de flags
+  if (Array.isArray(f)) return Object.fromEntries(Object.keys(ALL_FEATURES).map(k => [k, f.includes(k)]))
+  return (f as Record<string, boolean>) ?? {}
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

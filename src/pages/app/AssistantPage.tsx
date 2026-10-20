@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Copy, Download, FileBarChart, Loader2, Mic, RotateCcw, Send, Sparkles, Square, Volume2 } from 'lucide-react'
+import { callFn } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useAssistant, type AssistantPost } from '@/hooks/useAssistant'
 import PostPreview from '@/components/ui/PostPreview'
@@ -31,8 +32,13 @@ export default function AssistantPage() {
   const { plan, features, company } = useAuth()
   const { msgs, input, setInput, voice, setVoice, busy, recording, send, toggleMic, reset } = useAssistant()
   const endRef = useRef<HTMLDivElement>(null)
+  const [quota, setQuota] = useState<Record<string, { label: string; used: number; limit: number; credits: number }> | null>(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, busy])
+  useEffect(() => {
+    if (!company) return
+    callFn<Record<string, any>>('business-assistant', { action: 'quota_status' }).then(setQuota).catch(() => {})
+  }, [company?.id, msgs.length])
 
   if (plan && !features.assistant) {
     return (
@@ -60,6 +66,23 @@ export default function AssistantPage() {
           </button>
         </div>
       </div>
+
+      {quota && (
+        <div className="flex gap-1.5 flex-wrap mb-3">
+          {(['messages', 'assistant_audio', 'customer_audio', 'images'] as const).map(k => {
+            const q = quota[k]; if (!q) return null
+            const pct = q.limit > 0 ? Math.min(100, (q.used / q.limit) * 100) : 0
+            const tone = pct >= 100 ? 'border-red-300 bg-red-50 text-red-600' : pct >= 80 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-line bg-surface text-ink-muted'
+            return (
+              <span key={k} title={`${q.label}: ${q.used} de ${q.limit} este mês${q.credits ? ` · ${q.credits} créditos de recarga` : ''}`}
+                className={clsx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium', tone)}>
+                {q.label}: <b>{q.used}/{q.limit}</b>{q.credits ? ` (+${q.credits})` : ''}
+                <span className="h-1 w-8 rounded-full bg-black/10 overflow-hidden"><span className={clsx('block h-full', pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-brand-500')} style={{ width: `${pct}%` }} /></span>
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       <div className="card-lux flex-1 overflow-y-auto p-4 space-y-3 texture-dots">
         {msgs.map((m, i) => (
