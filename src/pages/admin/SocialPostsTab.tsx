@@ -8,7 +8,7 @@ import { callFn, fmtDate, FUNCTIONS_URL } from '@/lib/supabase'
 import { useDraft } from '@/hooks/useDraft'
 import clsx from 'clsx'
 
-type Slide = { role: 'dor' | 'solucao' | 'cta' | 'cena'; headline: string; sub: string; image_url?: string; image_prompt?: string; video_url?: string; video_prompt?: string; job_url?: string }
+type Slide = { role: 'dor' | 'solucao' | 'cta' | 'cena'; headline: string; sub: string; image_url?: string; image_prompt?: string; video_url?: string; video_prompt?: string; job_url?: string; has_audio?: boolean }
 type Draft = { title: string; type?: 'carousel' | 'reel'; slides: Slide[]; caption: string; hashtags: string[]; scheduled_at?: string }
 type SocialPost = { id: string; title: string; slides: Slide[]; caption: string; hashtags: string[]; status: 'rascunho' | 'pronto' | 'publicado'; created_at: string; scheduled_at?: string | null; ig_media_id?: string | null; published_at?: string | null; publish_error?: string | null }
 type IgStatus = { connected: boolean; username?: string; avatar?: string | null; expires_at?: string; app_id?: string | null; expired?: boolean; profile?: { name?: string; bio?: string; website?: string; followers?: number; following?: number; posts?: number } }
@@ -334,6 +334,18 @@ export default function SocialPostsTab() {
     }
   }
 
+  async function addVoice(postId: string, i: number) {
+    setGen(`Cena ${i + 1}: gravando narração e montando áudio…`)
+    const [{ audio }, st] = await Promise.all([
+      callFn<{ audio: string }>('admin', { action: 'social_scene_tts', post_id: postId, index: i }),
+      callFn<{ status: string; video_url?: string }>('admin', { action: 'social_scene_status', post_id: postId, index: i }),
+    ])
+    if (st.video_url && audio) {
+      const muxed = await muxVoice(st.video_url, audio)
+      await callFn('admin', { action: 'social_upload_scene', post_id: postId, index: i, data_url: muxed })
+    }
+  }
+
   async function materializeReel(draft: Draft) {
     if (gen) return
     setGen('Salvando roteiro…')
@@ -452,27 +464,37 @@ export default function SocialPostsTab() {
               <span className={clsx('badge text-[10px]', STATUS[post.status])}>{post.status}</span>
               <span className="text-[11px] text-ink-muted">{fmtDate(post.created_at)}</span>
               <div className="ml-auto flex items-center gap-2 flex-wrap">
-                {post.slides.some(x => !x.image_url && !x.video_url && x.video_prompt) && (
-                  <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={async () => {
-                    if (gen) return
-                    try {
-                      for (let i = 0; i < post.slides.length; i++) {
-                        const sl = post.slides[i]
-                        if (sl.video_url || !sl.video_prompt) continue
-                        await renderScene(post.id, i, post.slides.length, veo)
-                      }
-                      await load()
-                    } catch (e) { alert((e as Error).message) }
-                    setGen(null)
-                  }}>
-                    {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Gerar vídeo
-                  </button>
-                )}
-                {post.slides.some(x => !x.image_url && !x.video_prompt) && (
-                  <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={() => genImages(post)}>
-                    {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Gerar imagens
-                  </button>
-                )}
+                {(() => {
+                  const pending = post.slides.filter(x => !x.video_url && x.video_prompt).length
+                  const done = post.slides.filter(x => x.video_url).length
+                  return pending > 0 && (
+                    <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={async () => {
+                      if (gen) return
+                      try {
+                        for (let i = 0; i < post.slides.length; i++) {
+                          const sl = post.slides[i]
+                          if (sl.video_url || !sl.video_prompt) continue
+                          await renderScene(post.id, i, post.slides.length, veo)
+                        }
+                        await load()
+                      } catch (e) { alert((e as Error).message) }
+                      setGen(null)
+                    }}>
+                      {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {done > 0 ? `Continuar (${done}/${post.slides.length} prontas)` : 'Gerar vídeo'}
+                    </button>
+                  )
+                })()}
+                {(() => {
+                  const pending = post.slides.filter(x => !x.image_url && !x.video_prompt).length
+                  const done = post.slides.filter(x => x.image_url).length
+                  return pending > 0 && (
+                    <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={() => genImages(post)}>
+                      {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {done > 0 ? `Continuar (${done}/${post.slides.length} prontas)` : 'Gerar imagens'}
+                    </button>
+                  )
+                })()}
                 {post.ig_media_id && <span className="badge bg-emerald-100 text-emerald-700 text-[10px]">publicado no insta</span>}
                 {post.scheduled_at && !post.ig_media_id && <span className="badge bg-amber-100 text-amber-700 text-[10px]"><CalendarClock className="h-3 w-3" /> {fmtDate(post.scheduled_at)}</span>}
                 {post.publish_error && <span className="badge bg-red-100 text-red-600 text-[10px]" title={post.publish_error}>erro ao publicar</span>}
@@ -504,6 +526,14 @@ export default function SocialPostsTab() {
               {post.slides.map((sl, i) => (
                 <div key={i} className="relative shrink-0">
                   <SlidePreview slide={sl} />
+                  {sl.video_url && sl.video_prompt && (
+                    sl.has_audio
+                      ? <span className="absolute bottom-2 left-2 rounded-full bg-emerald-500/90 text-white text-[9px] font-medium px-2 py-0.5 z-10">com voz</span>
+                      : <button onClick={async () => { if (gen) return; try { await addVoice(post.id, i); await load() } catch (e) { alert((e as Error).message) } setGen(null) }} disabled={!!gen}
+                          className="absolute bottom-2 left-2 rounded-full bg-amber-500/95 text-white text-[9px] font-medium px-2 py-0.5 z-10 hover:scale-105 transition">
+                          {gen ? 'narrando…' : 'sem voz · narrar'}
+                        </button>
+                  )}
                   {sl.image_url && (
                     <button onClick={() => downloadSlide(post, i)} title="Baixar em 1080×1920 com texto"
                       className="absolute bottom-2 right-2 h-7 w-7 rounded-full bg-white/90 shadow-soft grid place-items-center hover:scale-105 transition z-10">

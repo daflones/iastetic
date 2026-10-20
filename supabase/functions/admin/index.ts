@@ -465,7 +465,7 @@ Deno.serve(async (req) => {
           const { error: upErr } = await db.storage.from('prospect').upload(path, bytes, { contentType: 'video/mp4' })
           if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
           const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
-          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null }
+          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null, has_audio: false }
           await db.from('social_posts').update({ slides }).eq('id', postId)
           return json({ ok: true, data: { status: 'done', video_url: pub.publicUrl } })
         }
@@ -486,7 +486,7 @@ Deno.serve(async (req) => {
         const job = await res.json().catch(() => ({}))
         const jobUrl = job.polling_url ?? (job.id ? `/api/v1/videos/${job.id}` : null)
         if (!res.ok || !jobUrl) throw new ApiError(502, 'VIDEO_FAILED', `Geração de vídeo falhou: ${JSON.stringify(job).slice(0, 200)}`)
-        const slides = [...post.slides]; slides[idx] = { ...slide, job_url: jobUrl }
+        const slides = [...post.slides]; slides[idx] = { ...slide, job_url: jobUrl, audio_native: provider !== 'cheap' }
         await db.from('social_posts').update({ slides }).eq('id', postId)
         return json({ ok: true, data: { status: 'generating' } })
       }
@@ -511,7 +511,7 @@ Deno.serve(async (req) => {
         await db.storage.from('prospect').upload(path, bytes, { contentType: 'video/mp4', upsert: true })
         const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
         const slides = [...(post.slides ?? [])]
-        if (slides[idx]) slides[idx] = { ...slides[idx], video_url: pub.publicUrl, job_url: null }
+        if (slides[idx]) slides[idx] = { ...slides[idx], video_url: pub.publicUrl, job_url: null, has_audio: true }
         await db.from('social_posts').update({ slides }).eq('id', postId)
         return json({ ok: true, data: { video_url: pub.publicUrl } })
       }
@@ -534,7 +534,7 @@ Deno.serve(async (req) => {
           const { error: upErr } = await db.storage.from('prospect').upload(path, buf, { contentType: 'video/mp4' })
           if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
           const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
-          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null }
+          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null, has_audio: slide.audio_native !== false, audio_native: null }
           await db.from('social_posts').update({ slides }).eq('id', postId)
           return json({ ok: true, data: { status: 'done', video_url: pub.publicUrl } })
         }
@@ -548,9 +548,27 @@ Deno.serve(async (req) => {
 
       case 'social_assistant': {
         const history: ChatMessage[] = Array.isArray(body.history) ? body.history.slice(-14) : []
+        // contexto: o que já existe na galeria, pra ela não propor repetido e saber continuar trabalhos
+        const { data: recent } = await db.from('social_posts')
+          .select('id,title,status,scheduled_at,ig_media_id,slides,created_at')
+          .order('created_at', { ascending: false }).limit(15)
+        const estado = (recent ?? []).map((p: any) => {
+          const sl = Array.isArray(p.slides) ? p.slides : []
+          const videos = sl.filter((x: any) => x?.video_url).length
+          const imgs = sl.filter((x: any) => x?.image_url).length
+          const isReel = sl.some((x: any) => x?.video_prompt)
+          const comVoz = sl.filter((x: any) => x?.has_audio).length
+          const midia = isReel ? `${videos}/${sl.length} cenas (${comVoz} com voz)` : `${imgs}/${sl.length} imagens`
+          return `- "${p.title}" [${p.status}${p.ig_media_id ? ', já publicado no IG' : ''}${p.scheduled_at ? `, agendado ${p.scheduled_at.slice(0, 16)}` : ''}] ${isReel ? 'REEL' : 'CARROSSEL'} ${midia}`
+        }).join('\n')
+        const ctx = estado ? `
+
+=== ESTADO ATUAL DA GALERIA (o que já foi criado) ===
+${estado}
+Regras: se o usuário pedir algo parecido com um post existente, mencione que ele já existe. Se houver trabalho incompleto (cenas/imagens faltando), você pode sugerir continuar. NÃO recrie o que já existe sem o usuário pedir.` : ''
         const { message } = await chat({
           messages: [
-            { role: 'system', content: SOCIAL_PROMPT },
+            { role: 'system', content: SOCIAL_PROMPT + ctx },
             ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 2000) })),
           ], temperature: 0.85, maxTokens: 14000,
         })
