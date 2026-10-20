@@ -192,6 +192,20 @@ export default function SocialPostsTab() {
     const r = await callFn<IgStatus>('admin', { action: 'ig_status' }).catch(() => null)
     if (r) setIg(r)
   }
+  async function genImages(post: SocialPost) {
+    if (gen) return
+    try {
+      for (let i = 0; i < post.slides.length; i++) {
+        if (!post.slides[i]?.image_url) {
+          setGen(`Gerando imagem ${i + 1}/${post.slides.length}…`)
+          await callFn('admin', { action: 'social_gen_slide', post_id: post.id, index: i })
+        }
+      }
+      await load()
+    } catch (e) { alert(`Falhou: ${(e as Error).message}`) }
+    setGen(null)
+  }
+
   async function publishNow(post: SocialPost) {
     setPublishing(post.id)
     try {
@@ -307,6 +321,11 @@ export default function SocialPostsTab() {
               <span className={clsx('badge text-[10px]', STATUS[post.status])}>{post.status}</span>
               <span className="text-[11px] text-ink-muted">{fmtDate(post.created_at)}</span>
               <div className="ml-auto flex items-center gap-2 flex-wrap">
+                {post.slides.some(x => !x.image_url) && (
+                  <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={() => genImages(post)}>
+                    {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Gerar imagens
+                  </button>
+                )}
                 {post.ig_media_id && <span className="badge bg-emerald-100 text-emerald-700 text-[10px]">publicado no insta</span>}
                 {post.scheduled_at && !post.ig_media_id && <span className="badge bg-amber-100 text-amber-700 text-[10px]"><CalendarClock className="h-3 w-3" /> {fmtDate(post.scheduled_at)}</span>}
                 {post.publish_error && <span className="badge bg-red-100 text-red-600 text-[10px]" title={post.publish_error}>erro ao publicar</span>}
