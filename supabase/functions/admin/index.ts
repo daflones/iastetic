@@ -15,7 +15,8 @@ SEU TRABALHO: criar CARROSSÉIS de 3 slides (9:16) na estrutura DOR → SOLUÇÃ
 
 Responda SEMPRE em JSON válido:
 - Se faltar contexto (tema, público, oferta): {"say": "pergunta curta"}
-- Quando pronto pra gerar: {"say": "resumo da ideia em 1-2 linhas", "draft": {...}}
+- Quando pronto pra gerar UM post: {"say": "resumo da ideia em 1-2 linhas", "draft": {...}}
+- Quando pedirem PROGRAMAÇÃO/CRONOGRAMA (ex.: "programa posts pra semana", "agenda do mês", "série de promoções"): {"say": "resumo do plano", "plan": [{"title","slides","caption","hashtags","scheduled_at"}, ...]} — cada item é um draft completo + scheduled_at em ISO 8601 (horário de Brasília, ex.: 2026-10-20T19:00:00-03:00). Distribua nos melhores horários (12h e 19h), varie nichos e temas, máx 7 posts por plano.
 
 draft = {
   "title": "nome interno curto do post",
@@ -396,6 +397,7 @@ Deno.serve(async (req) => {
           caption: str(body.caption, 4000),
           hashtags: Array.isArray(body.hashtags) ? body.hashtags.map((h: unknown) => String(h).slice(0, 40)) : [],
           status: ['rascunho', 'pronto', 'publicado'].includes(body.status) ? body.status : 'rascunho',
+          scheduled_at: body.scheduled_at ? new Date(String(body.scheduled_at)).toISOString() : null,
         }
         if (body.id) {
           await db.from('social_posts').update(row).eq('id', str(body.id, 64))
@@ -440,9 +442,9 @@ Deno.serve(async (req) => {
         const j = cleaned.match(/\{[\s\S]*\}/)?.[0]
         try {
           const parsed = JSON.parse(j ?? cleaned)
-          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null } })
+          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null, plan: Array.isArray(parsed.plan) ? parsed.plan.slice(0, 7) : null } })
         } catch {
-          return json({ ok: true, data: { say: raw.slice(0, 800), draft: null } })
+          return json({ ok: true, data: { say: raw.slice(0, 800), draft: null, plan: null } })
         }
       }
 
@@ -453,7 +455,7 @@ Deno.serve(async (req) => {
         const base = { app_id: appId ?? null }
         if (!ig) return json({ ok: true, data: { ...base, connected: false } })
         try {
-          const me = await igFetch(ig.access_token, 'me', { fields: 'username' })
+          const me = await igFetch(ig.access_token, 'me', { fields: 'user_id,username,name,profile_picture_url,biography,website,followers_count,follows_count,media_count' })
           const { data: cfg } = await db.from('platform_settings').select('value').eq('key', 'instagram').single()
           // renova o token se faltar menos de 7 dias pra expirar
           const exp = new Date(cfg.value.token_expires_at ?? 0).getTime()
@@ -465,7 +467,12 @@ Deno.serve(async (req) => {
               await db.from('platform_settings').update({ value: cfg.value }).eq('key', 'instagram')
             }
           }
-          return json({ ok: true, data: { ...base, connected: true, username: cfg.value.username ?? me.username, avatar: cfg.value.avatar ?? null, expires_at: cfg.value.token_expires_at } })
+          if (me.username && me.username !== cfg.value.username) {
+            cfg.value.username = me.username
+            cfg.value.avatar = me.profile_picture_url ?? cfg.value.avatar
+            await db.from('platform_settings').update({ value: cfg.value }).eq('key', 'instagram')
+          }
+          return json({ ok: true, data: { ...base, connected: true, username: me.username ?? cfg.value.username, avatar: me.profile_picture_url ?? cfg.value.avatar ?? null, expires_at: cfg.value.token_expires_at, profile: { name: me.name, bio: me.biography, website: me.website, followers: me.followers_count, following: me.follows_count, posts: me.media_count } } })
         } catch {
           return json({ ok: true, data: { ...base, connected: false, expired: true } })
         }

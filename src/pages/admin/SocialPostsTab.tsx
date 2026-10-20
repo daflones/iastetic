@@ -9,9 +9,9 @@ import { useDraft } from '@/hooks/useDraft'
 import clsx from 'clsx'
 
 type Slide = { role: 'dor' | 'solucao' | 'cta'; headline: string; sub: string; image_url?: string; image_prompt?: string }
-type Draft = { title: string; slides: Slide[]; caption: string; hashtags: string[] }
+type Draft = { title: string; slides: Slide[]; caption: string; hashtags: string[]; scheduled_at?: string }
 type SocialPost = { id: string; title: string; slides: Slide[]; caption: string; hashtags: string[]; status: 'rascunho' | 'pronto' | 'publicado'; created_at: string; scheduled_at?: string | null; ig_media_id?: string | null; published_at?: string | null; publish_error?: string | null }
-type IgStatus = { connected: boolean; username?: string; avatar?: string | null; expires_at?: string; app_id?: string | null; expired?: boolean }
+type IgStatus = { connected: boolean; username?: string; avatar?: string | null; expires_at?: string; app_id?: string | null; expired?: boolean; profile?: { name?: string; bio?: string; website?: string; followers?: number; following?: number; posts?: number } }
 type IgMedia = { id: string; caption?: string; media_url?: string; thumbnail_url?: string; like_count?: number; comments_count?: number; timestamp: string; permalink: string; media_type: string }
 
 const ROLE_META: Record<string, { label: string; cls: string }> = {
@@ -84,21 +84,37 @@ function IgConnection({ ig, onChange }: { ig: IgStatus | null; onChange: () => v
   const connectUrl = ig?.app_id
     ? `https://www.instagram.com/oauth/authorize?client_id=${ig.app_id}&redirect_uri=${encodeURIComponent(FUNCTIONS_URL + '/instagram-auth')}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_content_publish&force_reauth=true`
     : null
+  const p = ig?.profile
   return (
-    <div className="card-lux p-4 flex items-center gap-3 flex-wrap">
-      <span className={clsx('h-10 w-10 rounded-2xl grid place-items-center overflow-hidden', ig?.connected ? 'ring-2 ring-brand-400' : 'bg-gradient-to-br from-brand-100 to-accent-100')}>
-        {ig?.avatar ? <img src={ig.avatar} className="h-full w-full object-cover" /> : <Instagram className="h-5 w-5 text-brand-600" />}
-      </span>
-      <div className="flex-1 min-w-[180px]">
-        {ig?.connected
-          ? <><p className="font-semibold text-sm">@{ig.username} <span className="text-emerald-600 text-xs font-normal">· conectado</span></p>
-              <p className="text-[11px] text-ink-muted">token renova automaticamente · expira {ig.expires_at ? fmtDate(ig.expires_at) : '—'}</p></>
-          : <><p className="font-semibold text-sm">{ig?.expired ? 'Sessão expirada — reconecta' : 'Instagram não conectado'}</p>
-              <p className="text-[11px] text-ink-muted">{ig?.app_id ? 'Conecta a conta Business do IAstetic pra publicar e ver métricas' : 'Configure IG_APP_ID/IG_APP_SECRET em Integrações primeiro'}</p></>}
+    <div className="card-lux p-5">
+      <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
+        <span className={clsx('h-20 w-20 sm:h-24 sm:w-24 rounded-full grid place-items-center overflow-hidden shrink-0 p-[3px]', ig?.connected ? 'bg-gradient-to-tr from-amber-400 via-pink-500 to-brand-500' : 'bg-gradient-to-br from-brand-100 to-accent-100')}>
+          <span className="h-full w-full rounded-full bg-surface grid place-items-center overflow-hidden">
+            {ig?.avatar ? <img src={ig.avatar} className="h-full w-full object-cover" /> : <Instagram className="h-7 w-7 text-brand-600" />}
+          </span>
+        </span>
+        <div className="flex-1 min-w-[200px]">
+          <p className="font-bold text-lg">@{ig?.username ?? '…'} <span className="text-emerald-600 text-xs font-normal">{ig?.connected ? '· conectado' : ''}</span></p>
+          {p?.name && <p className="text-sm text-ink-soft">{p.name}</p>}
+          {p?.bio && <p className="text-xs text-ink-muted mt-0.5 line-clamp-2">{p.bio}</p>}
+          {p?.website && <a href={p.website} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">{p.website.replace(/^https?:\/\//, '')}</a>}
+        </div>
+        {ig?.connected && p && (
+          <div className="flex gap-5 sm:gap-7 text-center">
+            <div><p className="font-bold text-lg">{p.posts ?? 0}</p><p className="text-[10px] text-ink-muted uppercase tracking-wide">posts</p></div>
+            <div><p className="font-bold text-lg">{p.followers ?? 0}</p><p className="text-[10px] text-ink-muted uppercase tracking-wide">seguidores</p></div>
+            <div><p className="font-bold text-lg">{p.following ?? 0}</p><p className="text-[10px] text-ink-muted uppercase tracking-wide">seguindo</p></div>
+          </div>
+        )}
+        <div className="w-full sm:w-auto">
+          {ig?.connected
+            ? <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'ig_disconnect' }); onChange() }}><Unplug className="h-3.5 w-3.5" /> Desconectar</button>
+            : connectUrl
+              ? <a href={connectUrl} className="btn-primary text-xs !py-2"><Instagram className="h-4 w-4" /> Conectar Instagram</a>
+              : <p className="text-[11px] text-ink-muted">Configure IG_APP_ID/IG_APP_SECRET em Integrações</p>}
+        </div>
       </div>
-      {ig?.connected
-        ? <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'ig_disconnect' }); onChange() }}><Unplug className="h-3.5 w-3.5" /> Desconectar</button>
-        : connectUrl && <a href={connectUrl} className="btn-primary text-xs !py-2"><Instagram className="h-4 w-4" /> Conectar Instagram</a>}
+      {ig?.connected && <p className="text-[10px] text-ink-muted mt-3">token renova automaticamente · expira {ig.expires_at ? fmtDate(ig.expires_at) : '—'}</p>}
     </div>
   )
 }
@@ -112,8 +128,7 @@ function IgFeed() {
     callFn<IgMedia[]>('admin', { action: 'ig_media' }).then(setMedia).catch(() => setMedia([]))
   }, [])
 
-  async function openComments(id: string) {
-    if (open === id) { setOpen(null); return }
+  async function openPost(id: string) {
     setOpen(id)
     if (!comments[id]) {
       const c = await callFn<{ username: string; text: string; timestamp: string }[]>('admin', { action: 'ig_comments', media_id: id }).catch(() => [])
@@ -122,36 +137,58 @@ function IgFeed() {
   }
 
   if (media === null) return <div className="card-lux p-6 grid place-items-center"><Loader2 className="h-5 w-5 animate-spin text-brand-400" /></div>
-  if (!media.length) return <div className="card-lux p-6 text-center text-sm text-ink-muted">Nenhum post no perfil ainda.</div>
+  const sel = media.find(m => m.id === open)
 
   return (
     <div className="card-lux p-5">
-      <p className="font-semibold text-sm mb-3 flex items-center gap-2"><Instagram className="h-4 w-4 text-brand-500" /> Posts do Instagram ({media.length})</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+      <p className="font-semibold text-sm mb-3 flex items-center gap-2"><Instagram className="h-4 w-4 text-brand-500" /> Feed do Instagram ({media.length})</p>
+      {!media.length && <p className="text-sm text-ink-muted text-center py-4">Nenhum post no perfil ainda — publica o primeiro pela Marqueteira!</p>}
+      <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
         {media.map(m => (
-          <button key={m.id} onClick={() => openComments(m.id)} className="relative aspect-square rounded-xl overflow-hidden group text-left ring-1 ring-black/5">
-            <img src={m.thumbnail_url ?? m.media_url} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-            <div className="absolute bottom-1.5 inset-x-0 px-2 flex items-center gap-2 text-white text-[10px] font-medium">
-              <span className="flex items-center gap-0.5"><Heart className="h-3 w-3" />{m.like_count ?? 0}</span>
-              <span className="flex items-center gap-0.5"><MessageCircle className="h-3 w-3" />{m.comments_count ?? 0}</span>
+          <button key={m.id} onClick={() => openPost(m.id)} className="relative aspect-square overflow-hidden group text-left">
+            <img src={m.thumbnail_url ?? m.media_url} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity grid place-items-center">
+              <span className="flex items-center gap-4 text-white text-sm font-semibold">
+                <span className="flex items-center gap-1"><Heart className="h-4 w-4 fill-white" />{m.like_count ?? 0}</span>
+                <span className="flex items-center gap-1"><MessageCircle className="h-4 w-4 fill-white" />{m.comments_count ?? 0}</span>
+              </span>
             </div>
           </button>
         ))}
       </div>
-      {open && (
-        <div className="mt-4 rounded-xl bg-canvas p-4">
-          <p className="text-xs font-semibold mb-2 flex items-center gap-2">
-            Comentários · <a href={media.find(m => m.id === open)?.permalink} target="_blank" className="text-brand-600 underline" rel="noreferrer">ver no Instagram</a>
-          </p>
-          {(comments[open] ?? []).length === 0 && <p className="text-xs text-ink-muted">Nenhum comentário.</p>}
-          <div className="space-y-2 max-h-56 overflow-y-auto">
-            {(comments[open] ?? []).map((c, i) => (
-              <div key={i} className="text-xs bg-surface rounded-lg px-3 py-2">
-                <span className="font-semibold text-brand-700">@{c.username}</span> <span className="text-ink-soft">{c.text}</span>
-                <span className="block text-[10px] text-ink-muted mt-0.5">{fmtDate(c.timestamp)}</span>
+
+      {/* detalhe do post — estilo modal do Instagram */}
+      {sel && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setOpen(null)}>
+          <div className="bg-surface rounded-2xl overflow-hidden max-w-3xl w-full max-h-[90vh] grid sm:grid-cols-2 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-black grid place-items-center">
+              <img src={sel.media_url ?? sel.thumbnail_url} className="w-full h-full object-contain max-h-[50vh] sm:max-h-[90vh]" />
+            </div>
+            <div className="flex flex-col max-h-[90vh]">
+              <div className="p-4 border-b border-line flex items-center gap-2">
+                <Instagram className="h-4 w-4 text-brand-500" />
+                <span className="text-sm font-semibold">Post</span>
+                <a href={sel.permalink} target="_blank" rel="noreferrer" className="ml-auto text-xs text-brand-600 hover:underline">abrir no insta</a>
               </div>
-            ))}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {sel.caption && <p className="text-xs text-ink-soft whitespace-pre-wrap leading-relaxed">{sel.caption}</p>}
+                <div className="flex items-center gap-4 text-xs text-ink-muted pt-1">
+                  <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-red-400" />{sel.like_count ?? 0} curtidas</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5 text-brand-400" />{sel.comments_count ?? 0} comentários</span>
+                  <span className="ml-auto">{fmtDate(sel.timestamp)}</span>
+                </div>
+                <div className="pt-2 border-t border-line">
+                  <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mb-2">Comentários</p>
+                  {(comments[sel.id] ?? []).length === 0 && <p className="text-xs text-ink-muted">Nenhum comentário ainda.</p>}
+                  {(comments[sel.id] ?? []).map((c, i) => (
+                    <div key={i} className="text-xs py-1.5">
+                      <span className="font-semibold text-brand-700">@{c.username}</span> <span className="text-ink-soft">{c.text}</span>
+                      <span className="block text-[10px] text-ink-muted mt-0.5">{fmtDate(c.timestamp)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -178,7 +215,7 @@ function SlidePreview({ slide }: { slide: Slide }) {
 
 export default function SocialPostsTab() {
   const [posts, setPosts] = useState<SocialPost[]>([])
-  const [msgs, setMsgs] = useDraft<{ role: 'user' | 'assistant'; content: string; draft?: Draft }[]>('marqueteira:msgs', [])
+  const [msgs, setMsgs] = useDraft<{ role: 'user' | 'assistant'; content: string; draft?: Draft; plan?: Draft[] }[]>('marqueteira:msgs', [])
   const [input, setInput] = useDraft('marqueteira:input', '')
   const [busy, setBusy] = useState(false)
   const [gen, setGen] = useState<string | null>(null)
@@ -233,8 +270,8 @@ export default function SocialPostsTab() {
     const next = [...msgs, { role: 'user' as const, content: t }]
     setMsgs(next); setInput(''); setBusy(true)
     try {
-      const r = await callFn<{ say: string; draft: Draft | null }>('admin', { action: 'social_assistant', history: next.slice(-14).map(m => ({ role: m.role, content: m.content })) })
-      setMsgs([...next, { role: 'assistant', content: r.say || '…', draft: r.draft ?? undefined }])
+      const r = await callFn<{ say: string; draft: Draft | null; plan: Draft[] | null }>('admin', { action: 'social_assistant', history: next.slice(-14).map(m => ({ role: m.role, content: m.content })) })
+      setMsgs([...next, { role: 'assistant', content: r.say || '…', draft: r.draft ?? undefined, plan: r.plan ?? undefined }])
     } catch (e) { setMsgs([...next, { role: 'assistant', content: `Erro: ${(e as Error).message}` }]) }
     setBusy(false)
   }
@@ -253,6 +290,24 @@ export default function SocialPostsTab() {
       setMsgs(m => [...m, { role: 'assistant', content: 'Pronto! Carrossel gerado e salvo na galeria →' }])
       await load()
     } catch (e) { setMsgs(m => [...m, { role: 'assistant', content: `Falhou na geração: ${(e as Error).message}` }]) }
+    setGen(null)
+  }
+
+  async function materializePlan(plan: Draft[]) {
+    if (gen) return
+    try {
+      for (let d = 0; d < plan.length; d++) {
+        const draft = plan[d]
+        setGen(`Post ${d + 1}/${plan.length} — salvando…`)
+        const r = await callFn<{ id: string }>('admin', { action: 'social_post_save', title: draft.title, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags, status: 'pronto', scheduled_at: draft.scheduled_at ?? null })
+        for (let i = 0; i < draft.slides.length; i++) {
+          setGen(`Post ${d + 1}/${plan.length} — imagem ${i + 1}/${draft.slides.length}…`)
+          await callFn('admin', { action: 'social_gen_slide', post_id: r.id, index: i }).catch(() => {})
+        }
+      }
+      setMsgs(m => [...m, { role: 'assistant', content: `Programação criada! ${plan.length} posts salvos e agendados → o cron publica cada um na hora marcada.` }])
+      await load()
+    } catch (e) { setMsgs(m => [...m, { role: 'assistant', content: `Falhou: ${(e as Error).message}` }]) }
     setGen(null)
   }
 
@@ -284,6 +339,24 @@ export default function SocialPostsTab() {
               <div className={clsx('max-w-[88%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap', m.role === 'user' ? 'bg-brand-500 text-white ml-auto' : 'bg-canvas border border-line')}>
                 {m.content}
               </div>
+              {m.plan && (
+                <div className="mt-2 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-brand-800">Programação — {m.plan.length} posts</p>
+                  <div className="space-y-1.5">
+                    {m.plan.map((d, j) => (
+                      <div key={j} className="flex items-center gap-2 text-xs bg-white/70 rounded-lg px-2.5 py-1.5">
+                        <CalendarClock className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+                        <span className="font-medium flex-1">{d.title}</span>
+                        <span className="text-[10px] text-ink-muted">{d.scheduled_at ? fmtDate(d.scheduled_at) : '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="btn-primary !py-2 text-xs w-full" disabled={!!gen} onClick={() => materializePlan(m.plan!)}>
+                    {gen ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5" />}
+                    {gen ? gen : `Criar os ${m.plan.length} posts e agendar`}
+                  </button>
+                </div>
+              )}
               {m.draft && (
                 <div className="mt-2 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 space-y-2">
                   <p className="text-xs font-semibold text-brand-800">{m.draft.title} — {m.draft.slides.length} slides</p>
