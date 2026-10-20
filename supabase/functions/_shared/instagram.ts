@@ -1,5 +1,5 @@
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+const GRAPH = 'https://graph.instagram.com/v21.0'
 
 export interface IgConfig { ig_user_id: string; access_token: string; username?: string; token_expires_at?: string }
 

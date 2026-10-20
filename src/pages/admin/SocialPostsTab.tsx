@@ -82,7 +82,7 @@ async function uploadComposed(post: SocialPost) {
 
 function IgConnection({ ig, onChange }: { ig: IgStatus | null; onChange: () => void }) {
   const connectUrl = ig?.app_id
-    ? `https://www.facebook.com/v21.0/dialog/oauth?client_id=${ig.app_id}&redirect_uri=${encodeURIComponent(FUNCTIONS_URL + '/instagram-auth')}&response_type=code&scope=instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management`
+    ? `https://www.instagram.com/oauth/authorize?client_id=${ig.app_id}&redirect_uri=${encodeURIComponent(FUNCTIONS_URL + '/instagram-auth')}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_content_publish&force_reauth=true`
     : null
   return (
     <div className="card-lux p-4 flex items-center gap-3 flex-wrap">
@@ -94,7 +94,7 @@ function IgConnection({ ig, onChange }: { ig: IgStatus | null; onChange: () => v
           ? <><p className="font-semibold text-sm">@{ig.username} <span className="text-emerald-600 text-xs font-normal">· conectado</span></p>
               <p className="text-[11px] text-ink-muted">token renova automaticamente · expira {ig.expires_at ? fmtDate(ig.expires_at) : '—'}</p></>
           : <><p className="font-semibold text-sm">{ig?.expired ? 'Sessão expirada — reconecta' : 'Instagram não conectado'}</p>
-              <p className="text-[11px] text-ink-muted">{ig?.app_id ? 'Conecta a conta Business do IAstetic pra publicar e ver métricas' : 'Configure META_APP_ID/META_APP_SECRET em Integrações primeiro'}</p></>}
+              <p className="text-[11px] text-ink-muted">{ig?.app_id ? 'Conecta a conta Business do IAstetic pra publicar e ver métricas' : 'Configure IG_APP_ID/IG_APP_SECRET em Integrações primeiro'}</p></>}
       </div>
       {ig?.connected
         ? <button className="btn-ghost text-xs" onClick={async () => { await callFn('admin', { action: 'ig_disconnect' }); onChange() }}><Unplug className="h-3.5 w-3.5" /> Desconectar</button>

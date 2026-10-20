@@ -216,7 +216,7 @@ Deno.serve(async (req) => {
           'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
           'EVOLUTION_URL', 'EVOLUTION_APIKEY',
           'WEBHOOK_INGRESS_SECRET', 'CRON_SECRET', 'ADMIN_BOOTSTRAP_SECRET', 'PUBLIC_SITE_URL', 'SERPER_API_KEY',
-          'META_APP_ID', 'META_APP_SECRET',
+          'META_APP_ID', 'META_APP_SECRET', 'IG_APP_ID', 'IG_APP_SECRET',
         ]
         const { data: row } = await db.from('platform_settings').select('value').eq('key', 'secrets').maybeSingle()
         const dbSecrets = row?.value ?? {}
@@ -448,7 +448,7 @@ Deno.serve(async (req) => {
 
       // ---------- Instagram conectado ----------
       case 'ig_status': {
-        const appId = await getSecret('META_APP_ID')
+        const appId = (await getSecret('IG_APP_ID')) ?? (await getSecret('META_APP_ID'))
         const ig = await igConfig(db)
         const base = { app_id: appId ?? null }
         if (!ig) return json({ ok: true, data: { ...base, connected: false } })
@@ -458,14 +458,11 @@ Deno.serve(async (req) => {
           // renova o token se faltar menos de 7 dias pra expirar
           const exp = new Date(cfg.value.token_expires_at ?? 0).getTime()
           if (exp - Date.now() < 7 * 864e5) {
-            const appSecret = await getSecret('META_APP_SECRET')
-            if (appId && appSecret) {
-              const r = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${ig.access_token}`).then(r => r.json()).catch(() => ({}))
-              if (r.access_token) {
-                cfg.value.access_token = r.access_token
-                cfg.value.token_expires_at = new Date(Date.now() + Number(r.expires_in ?? 5_184_000) * 1000).toISOString()
-                await db.from('platform_settings').update({ value: cfg.value }).eq('key', 'instagram')
-              }
+            const r = await fetch(`https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${ig.access_token}`).then(r => r.json()).catch(() => ({}))
+            if (r.access_token) {
+              cfg.value.access_token = r.access_token
+              cfg.value.token_expires_at = new Date(Date.now() + Number(r.expires_in ?? 5_184_000) * 1000).toISOString()
+              await db.from('platform_settings').update({ value: cfg.value }).eq('key', 'instagram')
             }
           }
           return json({ ok: true, data: { ...base, connected: true, username: cfg.value.username ?? me.username, avatar: cfg.value.avatar ?? null, expires_at: cfg.value.token_expires_at } })
