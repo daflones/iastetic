@@ -65,7 +65,7 @@ export function useRecorder() {
   }
 
   async function start() {
-    if (recording) return
+    if (recRef.current) return // já capturando (ref é sempre atual, state pode estar velho)
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
     streamRef.current = stream
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) ?? ''
@@ -79,9 +79,19 @@ export function useRecorder() {
 
   /** Liga o microfone e encerra sozinho quando a pessoa para de falar. */
   async function startAuto(opts: AutoListenOpts) {
+    // mata qualquer captura anterior pendurada antes de começar uma limpa
+    cancelAnimationFrame(rafRef.current)
+    const oldRec = recRef.current
+    if (oldRec) {
+      recRef.current = null
+      try { oldRec.stop() } catch { /* já parado */ }
+    }
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
     await start()
     const stream = streamRef.current
-    if (!stream) return opts.onDone(null)
+    const myRec = recRef.current
+    if (!stream || !myRec) return opts.onDone(null)
     const silenceMs = opts.silenceMs ?? 1400
     const threshold = opts.threshold ?? 0.006
     const ctx = micCtx ?? (micCtx = new AudioContext())
@@ -95,7 +105,7 @@ export function useRecorder() {
     let silentSince = 0
     const t0 = Date.now()
     const tick = async () => {
-      if (!recRef.current) return
+      if (recRef.current !== myRec) return // outra escuta assumiu — sai calada
       analyser.getByteTimeDomainData(buf)
       let sum = 0
       let peak = 0
