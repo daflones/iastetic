@@ -550,26 +550,44 @@ Deno.serve(async (req) => {
         })
         const raw = message.content ?? ''
         const cleaned = raw.replace(/```json|```/g, '').trim()
-        let parsed: any = null
-        const j = cleaned.match(/\{[\s\S]*/)?.[0]
-        if (j) {
-          try { parsed = JSON.parse(j) } catch {
-            // resposta truncada: corta no último objeto completo e fecha a estrutura
-            const lastComplete = j.lastIndexOf('    }')
-            if (lastComplete > 0) {
-              try { parsed = JSON.parse(j.slice(0, lastComplete + 6) + ']}') } catch { /* tenta abaixo */ }
-            }
-            if (!parsed) {
-              const close = j.lastIndexOf('}')
-              try { parsed = JSON.parse(j.slice(0, close + 1) + ']}') } catch { /* segue */ }
-            }
+        // extrai um valor JSON balanceado a partir da chave — tolera aninhamento e truncamento
+        const extract = (key: string): any => {
+          const ki = cleaned.indexOf(`"${key}"`)
+          if (ki < 0) return null
+          let i = cleaned.indexOf(':', ki) + 1
+          while (i < cleaned.length && /\s/.test(cleaned[i])) i++
+          const open = cleaned[i]
+          if (open !== '{' && open !== '[') return null
+          const close = open === '{' ? '}' : ']'
+          let depth = 0, inStr = false, esc = false, lastEnd = -1, j = i
+          for (; j < cleaned.length; j++) {
+            const c = cleaned[j]
+            if (esc) { esc = false; continue }
+            if (c === '\\') { esc = true; continue }
+            if (c === '"') inStr = !inStr
+            if (inStr) continue
+            if (c === open) depth++
+            if (c === close) { depth--; if (depth === 0) { lastEnd = j; break } }
+            if ((open === '[' && c === '}') && depth === 1) lastEnd = j // último objeto completo dentro do array
+            if (depth === 1 && c === '}' && open === '{') lastEnd = j
           }
+          const candidates: string[] = []
+          if (j < cleaned.length && lastEnd === j) candidates.push(cleaned.slice(i, j + 1))
+          if (lastEnd > i) candidates.push(open === '[' ? cleaned.slice(i, lastEnd + 1) + ']' : cleaned.slice(i, lastEnd + 1))
+          for (const c of candidates) { try { return JSON.parse(c) } catch { /* tenta próximo */ } }
+          return null
         }
-        if (parsed?.plan?.length || parsed?.draft) {
-          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null, plan: Array.isArray(parsed.plan) ? parsed.plan.slice(0, 7) : null } })
-        }
-        const sayOnly = cleaned.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1]
-        return json({ ok: true, data: { say: sayOnly ?? 'Quase consegui — a resposta veio grande demais. Pede de novo dividindo: ex. "programação de 3 posts pra semana".', draft: null, plan: null } })
+
+        let say = '', draft: any = null, plan: any[] | null = null
+        const sayMatch = cleaned.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+        if (sayMatch) { try { say = JSON.parse(`"${sayMatch[1]}"`) } catch { say = sayMatch[1] } }
+        const root = extract('draft') ?? extract('reel') ?? extract('post')
+        if (root && !Array.isArray(root)) draft = root
+        const planArr = extract('plan')
+        if (Array.isArray(planArr) && planArr.length) plan = planArr.slice(0, 7)
+        console.log(`social_assistant parse: say=${!!say} draft=${!!draft} plan=${plan?.length ?? 0} rawLen=${raw.length}`)
+        if (draft || plan) return json({ ok: true, data: { say: String(say ?? ''), draft, plan } })
+        return json({ ok: true, data: { say: say || 'Quase consegui — a resposta veio quebrada. Tenta de novo (dica: pede em partes, ex. 3 posts por vez).', draft: null, plan: null } })
       }
 
       // ---------- Instagram conectado ----------

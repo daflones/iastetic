@@ -424,9 +424,9 @@ export default function SocialPostsTab() {
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {m.draft.slides.map((sl, j) => <SlidePreview key={j} slide={sl} />)}
                   </div>
-                  <button className="btn-primary !py-2 text-xs w-full" disabled={!!gen} onClick={() => m.draft!.type === 'reel' ? materializeReel(m.draft!) : materialize(m.draft!)}>
+                  <button className="btn-primary !py-2 text-xs w-full" disabled={!!gen} onClick={() => (m.draft!.type === 'reel' || m.draft!.slides.some(x => x.video_prompt)) ? materializeReel(m.draft!) : materialize(m.draft!)}>
                     {gen ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    {gen ? gen : m.draft!.type === 'reel' ? `Gerar o vídeo (${m.draft!.slides.length} cena${m.draft!.slides.length > 1 ? 's' : ''}) e salvar` : 'Gerar as 3 imagens e salvar'}
+                    {gen ? gen : (m.draft!.type === 'reel' || m.draft!.slides.some(x => x.video_prompt)) ? `Gerar o vídeo (${m.draft!.slides.length} cena${m.draft!.slides.length > 1 ? 's' : ''}) e salvar` : 'Gerar as 3 imagens e salvar'}
                   </button>
                 </div>
               )}
