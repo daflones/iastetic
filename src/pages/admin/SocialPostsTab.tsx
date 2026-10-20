@@ -22,6 +22,25 @@ const ROLE_META: Record<string, { label: string; cls: string }> = {
 }
 const STATUS: Record<string, string> = { rascunho: 'bg-slate-100 text-slate-600', pronto: 'bg-emerald-100 text-emerald-700', publicado: 'bg-brand-100 text-brand-700' }
 
+/** Junta vídeo mudo + narração ElevenLabs num MP4 só (ffmpeg.wasm via CDN). */
+async function muxVoice(videoUrl: string, audioDataUrl: string): Promise<string> {
+  const dynImport = new Function('u', 'return import(u)') as (u: string) => Promise<any>
+  const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([dynImport('https://esm.sh/@ffmpeg/ffmpeg@0.12.10'), dynImport('https://esm.sh/@ffmpeg/util@0.12.1')])
+  const ffmpeg = new FFmpeg()
+  const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+  })
+  await ffmpeg.writeFile('v.mp4', await fetchFile(videoUrl))
+  await ffmpeg.writeFile('a.mp3', await fetchFile(audioDataUrl))
+  await ffmpeg.exec(['-i', 'v.mp4', '-i', 'a.mp3', '-c:v', 'copy', '-c:a', 'aac', '-shortest', 'out.mp4'])
+  const data = await ffmpeg.readFile('out.mp4')
+  ffmpeg.terminate()
+  const blob = new Blob([data], { type: 'video/mp4' })
+  return await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(r.result as string); r.readAsDataURL(blob) })
+}
+
 /** Compõe o slide final (imagem + textos) num canvas 1080×1920. */
 async function composeSlide(post: SocialPost, idx: number): Promise<HTMLCanvasElement | null> {
   const sl = post.slides[idx]; if (!sl?.image_url) return null
@@ -220,6 +239,7 @@ export default function SocialPostsTab() {
   const [posts, setPosts] = useState<SocialPost[]>([])
   const [msgs, setMsgs] = useDraft<{ role: 'user' | 'assistant'; content: string; draft?: Draft; plan?: Draft[] }[]>('marqueteira:msgs', [])
   const [input, setInput] = useDraft('marqueteira:input', '')
+  const [veo, setVeo] = useDraft('marqueteira:veo', true)
   const [busy, setBusy] = useState(false)
   const [gen, setGen] = useState<string | null>(null)
   const [ig, setIg] = useState<IgStatus | null>(null)
@@ -296,22 +316,34 @@ export default function SocialPostsTab() {
     setGen(null)
   }
 
+  async function renderScene(postId: string, i: number, total: number, useVeo: boolean) {
+    setGen(`Renderizando cena ${i + 1}/${total} (${useVeo ? 'Veo' : 'NVIDIA'} — ~1min)…`)
+    await callFn('admin', { action: 'social_gen_scene', post_id: postId, index: i, provider: useVeo ? 'openrouter' : 'nvidia' })
+    for (let t = 0; t < 40; t++) {
+      await new Promise(r => setTimeout(r, 6000))
+      const st = await callFn<{ status: string; video_url?: string }>('admin', { action: 'social_scene_status', post_id: postId, index: i }).catch(() => ({ status: 'generating' } as any))
+      if (st.status === 'done') {
+        if (!useVeo) {
+          setGen(`Cena ${i + 1}: gravando narração e montando áudio…`)
+          const { audio } = await callFn<{ audio: string }>('admin', { action: 'social_scene_tts', post_id: postId, index: i })
+          if (st.video_url && audio) {
+            const muxed = await muxVoice(st.video_url, audio)
+            await callFn('admin', { action: 'social_upload_scene', post_id: postId, index: i, data_url: muxed })
+          }
+        }
+        return
+      }
+      if (t === 39) throw new Error('cena demorou demais')
+    }
+  }
+
   async function materializeReel(draft: Draft) {
     if (gen) return
     setGen('Salvando roteiro…')
     try {
       const r = await callFn<{ id: string }>('admin', { action: 'social_post_save', title: draft.title, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags, status: 'pronto', scheduled_at: draft.scheduled_at ?? null })
       const postId = r.id
-      for (let i = 0; i < draft.slides.length; i++) {
-        setGen(`Renderizando cena ${i + 1}/${draft.slides.length} (Veo 3.1 — pode levar ~1min por cena)…`)
-        await callFn('admin', { action: 'social_gen_scene', post_id: postId, index: i })
-        for (let t = 0; t < 40; t++) {
-          await new Promise(r => setTimeout(r, 6000))
-          const st = await callFn<{ status: string }>('admin', { action: 'social_scene_status', post_id: postId, index: i }).catch(() => ({ status: 'generating' }))
-          if (st.status === 'done') break
-          if (t === 39) throw new Error('cena demorou demais')
-        }
-      }
+      for (let i = 0; i < draft.slides.length; i++) await renderScene(postId, i, draft.slides.length, veo)
       setMsgs(m => [...m, { role: 'assistant', content: 'Reel gerado! Tá na galeria → pode publicar/agendar pro Instagram.' }])
       await load()
     } catch (e) { setMsgs(m => [...m, { role: 'assistant', content: `Falhou na geração: ${(e as Error).message}` }]) }
@@ -345,7 +377,11 @@ export default function SocialPostsTab() {
         <div className="p-4 border-b border-line flex items-center gap-2">
           <Megaphone className="h-4 w-4 text-brand-500" />
           <p className="font-semibold text-sm">Marqueteira</p>
-          <p className="text-[11px] text-ink-muted ml-auto">carrosséis · legendas · 9:16</p>
+          <button onClick={() => setVeo(!veo)} title={veo ? 'Veo ligado: vídeo já sai com fala embutida (pago ~$1/cena)' : 'Grátis: NVIDIA Cosmos + narração ElevenLabs montada no vídeo'}
+            className={clsx('ml-auto flex items-center gap-1.5 text-[10px] font-medium rounded-full px-2.5 py-1 transition', veo ? 'bg-brand-100 text-brand-700' : 'bg-emerald-100 text-emerald-700')}>
+            <span className={clsx('h-1.5 w-1.5 rounded-full', veo ? 'bg-brand-500' : 'bg-emerald-500')} />
+            {veo ? 'Veo (áudio nativo)' : 'Grátis + voz IA'}
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {msgs.length === 0 && (
@@ -426,13 +462,7 @@ export default function SocialPostsTab() {
                       for (let i = 0; i < post.slides.length; i++) {
                         const sl = post.slides[i]
                         if (sl.video_url || !sl.video_prompt) continue
-                        setGen(`Renderizando cena ${i + 1}/${post.slides.length}…`)
-                        await callFn('admin', { action: 'social_gen_scene', post_id: post.id, index: i })
-                        for (let t = 0; t < 40; t++) {
-                          await new Promise(r => setTimeout(r, 6000))
-                          const st = await callFn<{ status: string }>('admin', { action: 'social_scene_status', post_id: post.id, index: i }).catch(() => ({ status: 'generating' }))
-                          if (st.status === 'done') break
-                        }
+                        await renderScene(post.id, i, post.slides.length, veo)
                       }
                       await load()
                     } catch (e) { alert((e as Error).message) }

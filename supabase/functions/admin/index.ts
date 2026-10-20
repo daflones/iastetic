@@ -1,7 +1,7 @@
 import { cors, json, errorResponse, ApiError, str } from '../_shared/http.ts'
 import { requireAdmin, requireUser, serviceClient } from '../_shared/db.ts'
 import { createInstance, setWebhook, connectInstance, connectionState, logoutInstance, sendText, sendMedia, checkWhatsAppNumbers } from '../_shared/evolution.ts'
-import { chat, generateImage, transcribeAudio, type ChatMessage } from '../_shared/nvidia.ts'
+import { chat, generateImage, synthesizeSpeech, transcribeAudio, type ChatMessage } from '../_shared/nvidia.ts'
 import { getSecret } from '../_shared/secrets.ts'
 import { igConfig, igFetch, publishCarousel } from '../_shared/instagram.ts'
 
@@ -443,7 +443,7 @@ Deno.serve(async (req) => {
         if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Cena inválida.')
 
         // provedor: 'nvidia' = Cosmos3 Nano (endpoint grátis, vídeo mudo) | 'openrouter' = Veo (com áudio/fala)
-        const provider = ((await getSecret('VIDEO_PROVIDER')) ?? 'openrouter').toLowerCase()
+        const provider = (str(body.provider, 12) || (await getSecret('VIDEO_PROVIDER')) || 'openrouter').toLowerCase()
 
         if (provider === 'nvidia') {
           const nvKey = await getSecret('NVIDIA_API_KEY')
@@ -484,6 +484,32 @@ Deno.serve(async (req) => {
         await db.from('social_posts').update({ slides }).eq('id', postId)
         return json({ ok: true, data: { status: 'generating' } })
       }
+      case 'social_scene_tts': {
+        const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        const slide = post?.slides?.[idx]
+        const fala = String(slide?.sub ?? '').trim()
+        if (!fala) throw new ApiError(400, 'NO_SPEECH', 'Cena sem fala para narrar.')
+        const audio = await synthesizeSpeech(fala)
+        return json({ ok: true, data: { audio: `data:${audio.mime};base64,${audio.base64}` } })
+      }
+
+      case 'social_upload_scene': {
+        const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
+        const m = /^data:video\/(\w+);base64,(.+)$/.exec(String(body.data_url ?? ''))
+        if (!m) throw new ApiError(400, 'BAD_VIDEO', 'Vídeo inválido.')
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0))
+        if (bytes.length > 40_000_000) throw new ApiError(400, 'TOO_BIG', 'Vídeo acima de 40MB.')
+        const path = `reels/${postId}/${idx}-mux-${crypto.randomUUID().slice(0, 8)}.mp4`
+        await db.storage.from('prospect').upload(path, bytes, { contentType: 'video/mp4', upsert: true })
+        const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+        const slides = [...(post.slides ?? [])]
+        if (slides[idx]) slides[idx] = { ...slides[idx], video_url: pub.publicUrl, job_url: null }
+        await db.from('social_posts').update({ slides }).eq('id', postId)
+        return json({ ok: true, data: { video_url: pub.publicUrl } })
+      }
+
       case 'social_scene_status': {
         const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
         const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
