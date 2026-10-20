@@ -29,6 +29,10 @@ draft = {
   "hashtags": ["#salao", "#barbearia", "...até 12"]
 }
 
+FORMATO REEL (vídeo viral): quando pedirem vídeo/reel/conteúdo viral, responda {"say": "resumo do conceito", "draft": {"type": "reel", "title", "caption", "hashtags", "slides": [{"role": "cena", "headline": "nome da cena (ex.: HOOK, VIRADA, CTA)", "sub": "a fala ou ação em pt-BR", "video_prompt": "..."}]}} — 1 a 3 cenas de ~8s cada. Escreva ROTEIRO VIRAL: hook forte nos 2 primeiros segundos; situações engraçadas, emotivas ou impactantes do dia a dia dos nichos (cliente que some, dona sobrecarregada atendendo madrugada, barbeiro cobrando no-show, cliente que vira fã); histórias curtas com virada emocional quando fizer sentido; CTA sempre pro IAstetic.
+
+video_prompt (sempre em INGLÊS, direção profissional): "vertical 9:16 video, photorealistic, shot on smartphone, handheld cinematic feel, real Brazilian person with natural skin and authentic expression, premium salon/nail/barbershop/clinic setting, professional color grade, shallow depth of field" + AÇÃO e FALA da personagem entre aspas em Brazilian Portuguese (ex.: She says in Brazilian Portuguese with a tired tone: "…"). Inclua direção de arte (clima engraçado/triste/impactante), gestos e expressão. NENHUM texto, legenda ou letra na imagem — texto é sobreposto depois.
+
 image_prompt (sempre em INGLÊS, pra qualidade máxima): "vertical 9:16 portrait photo, photorealistic, cinematic editorial photography, Brazilian real person with natural skin and authentic expression, premium beauty-business setting, shallow depth of field, warm professional lighting" + cena que REPRESENTA a emoção do slide (ex.: tired manicurist looking at phone full of unread messages at night / happy salon owner showing a fully-booked schedule / client's POV of WhatsApp chat on phone). REGRAS: (a) pessoas brasileiras realistas e diversas — nunca manequins/stock genérico; (b) profundidade e composição editorial premium; (c) ABSOLUTAMENTE NENHUM texto, letra, número, logo ou interface escrita na imagem — o texto é sobreposto depois em pt-BR correto; (d) varie nichos/cenas entre slides e entre posts (salão, unha, olhar/cílios, barbearia, clínica).
 
 Headline/sub/legenda: português brasileiro impecável — gramática e ortografia revisadas, tom de amiga experiente.`
@@ -429,6 +433,59 @@ Deno.serve(async (req) => {
         slides[idx] = { ...slide, image_url: pub.publicUrl }
         await db.from('social_posts').update({ slides }).eq('id', postId)
         return json({ ok: true, data: { image_url: pub.publicUrl } })
+      }
+
+case 'social_gen_scene': {
+        const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        const slide = post?.slides?.[idx]
+        if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Cena inválida.')
+        const orKey = await getSecret('OPENROUTER_API_KEY')
+        if (!orKey) throw new ApiError(400, 'NO_KEY', 'Configure OPENROUTER_API_KEY em Integrações.')
+        const res = await fetch('https://openrouter.ai/api/v1/videos', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${orKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: (await getSecret('VIDEO_MODEL')) ?? 'google/veo-3.1-fast',
+            prompt: slide.video_prompt ?? '', aspect_ratio: '9:16', duration: 8, resolution: '720p', generate_audio: true,
+          }),
+        })
+        const job = await res.json().catch(() => ({}))
+        const jobUrl = job.polling_url ?? (job.id ? `/api/v1/videos/${job.id}` : null)
+        if (!res.ok || !jobUrl) throw new ApiError(502, 'VIDEO_FAILED', `Geração de vídeo falhou: ${JSON.stringify(job).slice(0, 200)}`)
+        const slides = [...post.slides]; slides[idx] = { ...slide, job_url: jobUrl }
+        await db.from('social_posts').update({ slides }).eq('id', postId)
+        return json({ ok: true, data: { status: 'generating' } })
+      }
+
+      case 'social_scene_status': {
+        const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        const slide = post?.slides?.[idx]
+        if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Cena inválida.')
+        if (slide.video_url) return json({ ok: true, data: { status: 'done', video_url: slide.video_url } })
+        if (!slide.job_url) return json({ ok: true, data: { status: 'idle' } })
+        const orKey = await getSecret('OPENROUTER_API_KEY')
+        const url = slide.job_url.startsWith('http') ? slide.job_url : `https://openrouter.ai${slide.job_url}`
+        const job = await fetch(url, { headers: { Authorization: `Bearer ${orKey}` } }).then(r => r.json()).catch(() => ({}))
+        if (job.status === 'completed') {
+          const vurl = job.urls?.[0] ?? job.unsigned_urls?.[0]
+          if (!vurl) throw new ApiError(502, 'NO_URL', 'Vídeo pronto sem URL.')
+          const buf = new Uint8Array(await (await fetch(vurl, { headers: { Authorization: `Bearer ${orKey}` } })).arrayBuffer())
+          const path = `reels/${postId}/${idx}-${crypto.randomUUID().slice(0, 8)}.mp4`
+          const { error: upErr } = await db.storage.from('prospect').upload(path, buf, { contentType: 'video/mp4' })
+          if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
+          const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null }
+          await db.from('social_posts').update({ slides }).eq('id', postId)
+          return json({ ok: true, data: { status: 'done', video_url: pub.publicUrl } })
+        }
+        if (['failed', 'cancelled', 'expired'].includes(job.status)) {
+          const slides = [...post.slides]; slides[idx] = { ...slide, job_url: null }
+          await db.from('social_posts').update({ slides }).eq('id', postId)
+          throw new ApiError(502, 'VIDEO_FAILED', `Geração falhou (${job.status}) — tenta de novo.`)
+        }
+        return json({ ok: true, data: { status: 'generating' } })
       }
 
       case 'social_assistant': {

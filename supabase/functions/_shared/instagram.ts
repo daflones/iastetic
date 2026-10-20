@@ -23,27 +23,47 @@ export async function igFetch(token: string, path: string, params: Record<string
   return data
 }
 
-/** Publica um carrossel no Instagram (children containers → parent → publish). */
-export async function publishCarousel(ig: IgConfig, slides: { image_url?: string; composed_url?: string }[], caption: string): Promise<string> {
-  const imgs = slides.map(s => s.composed_url ?? s.image_url).filter(Boolean) as string[]
-  if (!imgs.length) throw new Error('Post sem imagens para publicar.')
+async function waitReady(token: string, id: string) {
+  for (let i = 0; i < 12; i++) {
+    await new Promise(r => setTimeout(r, 5000))
+    const st = await igFetch(token, id, { fields: 'status_code' }).catch(() => null)
+    if (st?.status_code === 'FINISHED' || st?.status_code === 'PUBLISHED') return
+    if (st?.status_code === 'ERROR') throw new Error('Instagram recusou a mídia (formato/tamanho).')
+  }
+}
+
+/** Publica no Instagram: 1 vídeo → Reel; N itens → carrossel (vídeo e/ou imagem). */
+export async function publishCarousel(ig: IgConfig, slides: { image_url?: string; composed_url?: string; video_url?: string }[], caption: string): Promise<string> {
+  const items = slides.map(s => ({ video: s.video_url, img: s.composed_url ?? s.image_url })).filter(s => s.video || s.img)
+  if (!items.length) throw new Error('Post sem mídia para publicar.')
+  const cap = caption.slice(0, 2200)
+
+  if (items.length === 1 && items[0].video) {
+    const c = await igFetch(ig.access_token, `${ig.ig_user_id}/media`, {}, 'POST', {
+      media_type: 'REELS', video_url: items[0].video, caption: cap, share_to_feed: 'true',
+    })
+    await waitReady(ig.access_token, c.id)
+    const pub = await igFetch(ig.access_token, `${ig.ig_user_id}/media_publish`, {}, 'POST', { creation_id: c.id })
+    return pub.id as string
+  }
+
   const children: string[] = []
-  for (const url of imgs.slice(0, 10)) {
-    const c = await igFetch(ig.access_token, `${ig.ig_user_id}/media`, {}, 'POST', { image_url: url, is_carousel_item: 'true' })
+  for (const it of items.slice(0, 10)) {
+    const params: Record<string, string> = it.video
+      ? { media_type: 'VIDEO', video_url: it.video!, is_carousel_item: 'true' }
+      : { image_url: it.img!, is_carousel_item: 'true' }
+    const c = await igFetch(ig.access_token, `${ig.ig_user_id}/media`, {}, 'POST', params)
+    await waitReady(ig.access_token, c.id)
     children.push(c.id)
   }
   const container = await igFetch(ig.access_token, `${ig.ig_user_id}/media`, {}, 'POST', {
-    media_type: 'CAROUSEL', children: children.join(','), caption: caption.slice(0, 2200),
+    media_type: 'CAROUSEL', children: children.join(','), caption: cap,
   })
-  // espera o container ficar pronto (status FINISHED)
-  for (let i = 0; i < 10; i++) {
-    await new Promise(r => setTimeout(r, 3000))
-    const st = await igFetch(ig.access_token, container.id, { fields: 'status_code' }).catch(() => null)
-    if (st?.status_code === 'FINISHED' || st?.status_code === 'PUBLISHED') break
-  }
+  await waitReady(ig.access_token, container.id)
   const pub = await igFetch(ig.access_token, `${ig.ig_user_id}/media_publish`, {}, 'POST', { creation_id: container.id })
   return pub.id as string
 }
+
 
 /** Varredura do cron: publica posts agendados cuja hora chegou. */
 export async function publishDueSocialPosts(db: any): Promise<number> {

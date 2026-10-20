@@ -8,8 +8,8 @@ import { callFn, fmtDate, FUNCTIONS_URL } from '@/lib/supabase'
 import { useDraft } from '@/hooks/useDraft'
 import clsx from 'clsx'
 
-type Slide = { role: 'dor' | 'solucao' | 'cta'; headline: string; sub: string; image_url?: string; image_prompt?: string }
-type Draft = { title: string; slides: Slide[]; caption: string; hashtags: string[]; scheduled_at?: string }
+type Slide = { role: 'dor' | 'solucao' | 'cta' | 'cena'; headline: string; sub: string; image_url?: string; image_prompt?: string; video_url?: string; video_prompt?: string; job_url?: string }
+type Draft = { title: string; type?: 'carousel' | 'reel'; slides: Slide[]; caption: string; hashtags: string[]; scheduled_at?: string }
 type SocialPost = { id: string; title: string; slides: Slide[]; caption: string; hashtags: string[]; status: 'rascunho' | 'pronto' | 'publicado'; created_at: string; scheduled_at?: string | null; ig_media_id?: string | null; published_at?: string | null; publish_error?: string | null }
 type IgStatus = { connected: boolean; username?: string; avatar?: string | null; expires_at?: string; app_id?: string | null; expired?: boolean; profile?: { name?: string; bio?: string; website?: string; followers?: number; following?: number; posts?: number } }
 type IgMedia = { id: string; caption?: string; media_url?: string; thumbnail_url?: string; like_count?: number; comments_count?: number; timestamp: string; permalink: string; media_type: string }
@@ -18,6 +18,7 @@ const ROLE_META: Record<string, { label: string; cls: string }> = {
   dor: { label: 'A DOR', cls: 'bg-red-500/90' },
   solucao: { label: 'A SOLUÇÃO', cls: 'bg-emerald-500/90' },
   cta: { label: 'CTA', cls: 'bg-brand-500/90' },
+  cena: { label: 'CENA', cls: 'bg-pink-500/90' },
 }
 const STATUS: Record<string, string> = { rascunho: 'bg-slate-100 text-slate-600', pronto: 'bg-emerald-100 text-emerald-700', publicado: 'bg-brand-100 text-brand-700' }
 
@@ -200,9 +201,11 @@ function SlidePreview({ slide }: { slide: Slide }) {
   const meta = ROLE_META[slide.role] ?? ROLE_META.cta
   return (
     <div className="relative w-40 shrink-0 aspect-[9/16] rounded-xl overflow-hidden bg-ink/10 snap-start ring-1 ring-black/5">
-      {slide.image_url
-        ? <img src={slide.image_url} className="absolute inset-0 w-full h-full object-cover" />
-        : <div className="absolute inset-0 grid place-items-center text-ink-muted"><ImageIcon className="h-6 w-6" /></div>}
+      {slide.video_url
+        ? <video src={slide.video_url} className="absolute inset-0 w-full h-full object-cover" controls playsInline />
+        : slide.image_url
+          ? <img src={slide.image_url} className="absolute inset-0 w-full h-full object-cover" />
+          : <div className="absolute inset-0 grid place-items-center text-ink-muted"><ImageIcon className="h-6 w-6" /></div>}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
       <span className={clsx('absolute top-2 left-2 text-[8px] font-bold text-white rounded-full px-2 py-0.5 tracking-wider', meta.cls)}>{meta.label}</span>
       <div className="absolute bottom-0 inset-x-0 p-2.5">
@@ -293,6 +296,28 @@ export default function SocialPostsTab() {
     setGen(null)
   }
 
+  async function materializeReel(draft: Draft) {
+    if (gen) return
+    setGen('Salvando roteiro…')
+    try {
+      const r = await callFn<{ id: string }>('admin', { action: 'social_post_save', title: draft.title, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags, status: 'pronto', scheduled_at: draft.scheduled_at ?? null })
+      const postId = r.id
+      for (let i = 0; i < draft.slides.length; i++) {
+        setGen(`Renderizando cena ${i + 1}/${draft.slides.length} (Veo 3.1 — pode levar ~1min por cena)…`)
+        await callFn('admin', { action: 'social_gen_scene', post_id: postId, index: i })
+        for (let t = 0; t < 40; t++) {
+          await new Promise(r => setTimeout(r, 6000))
+          const st = await callFn<{ status: string }>('admin', { action: 'social_scene_status', post_id: postId, index: i }).catch(() => ({ status: 'generating' }))
+          if (st.status === 'done') break
+          if (t === 39) throw new Error('cena demorou demais')
+        }
+      }
+      setMsgs(m => [...m, { role: 'assistant', content: 'Reel gerado! Tá na galeria → pode publicar/agendar pro Instagram.' }])
+      await load()
+    } catch (e) { setMsgs(m => [...m, { role: 'assistant', content: `Falhou na geração: ${(e as Error).message}` }]) }
+    setGen(null)
+  }
+
   async function materializePlan(plan: Draft[]) {
     if (gen) return
     try {
@@ -328,7 +353,7 @@ export default function SocialPostsTab() {
               <Megaphone className="h-10 w-10 text-brand-300 mx-auto" />
               <p className="text-sm text-ink-muted mt-3">Pede um carrossel — eu crio dor, solução e CTA:</p>
               <div className="flex gap-2 flex-wrap justify-center mt-3">
-                {['Post sobre cliente que some (no-show)', 'Carrossel: responder WhatsApp de madrugada', 'Post pra dona de esmalteria'].map(x => (
+                {['Post sobre cliente que some (no-show)', 'Reel viral: dona de salão respondendo cliente de madrugada', 'Programação de 5 posts pra semana'].map(x => (
                   <button key={x} className="badge bg-brand-50 text-brand-700 hover:bg-brand-100 text-xs" onClick={() => setInput(x)}>{x}</button>
                 ))}
               </div>
@@ -363,9 +388,9 @@ export default function SocialPostsTab() {
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {m.draft.slides.map((sl, j) => <SlidePreview key={j} slide={sl} />)}
                   </div>
-                  <button className="btn-primary !py-2 text-xs w-full" disabled={!!gen} onClick={() => materialize(m.draft!)}>
+                  <button className="btn-primary !py-2 text-xs w-full" disabled={!!gen} onClick={() => m.draft!.type === 'reel' ? materializeReel(m.draft!) : materialize(m.draft!)}>
                     {gen ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    {gen ? gen : 'Gerar as 3 imagens e salvar'}
+                    {gen ? gen : m.draft!.type === 'reel' ? `Gerar o vídeo (${m.draft!.slides.length} cena${m.draft!.slides.length > 1 ? 's' : ''}) e salvar` : 'Gerar as 3 imagens e salvar'}
                   </button>
                 </div>
               )}
@@ -394,7 +419,29 @@ export default function SocialPostsTab() {
               <span className={clsx('badge text-[10px]', STATUS[post.status])}>{post.status}</span>
               <span className="text-[11px] text-ink-muted">{fmtDate(post.created_at)}</span>
               <div className="ml-auto flex items-center gap-2 flex-wrap">
-                {post.slides.some(x => !x.image_url) && (
+                {post.slides.some(x => !x.image_url && !x.video_url && x.video_prompt) && (
+                  <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={async () => {
+                    if (gen) return
+                    try {
+                      for (let i = 0; i < post.slides.length; i++) {
+                        const sl = post.slides[i]
+                        if (sl.video_url || !sl.video_prompt) continue
+                        setGen(`Renderizando cena ${i + 1}/${post.slides.length}…`)
+                        await callFn('admin', { action: 'social_gen_scene', post_id: post.id, index: i })
+                        for (let t = 0; t < 40; t++) {
+                          await new Promise(r => setTimeout(r, 6000))
+                          const st = await callFn<{ status: string }>('admin', { action: 'social_scene_status', post_id: post.id, index: i }).catch(() => ({ status: 'generating' }))
+                          if (st.status === 'done') break
+                        }
+                      }
+                      await load()
+                    } catch (e) { alert((e as Error).message) }
+                    setGen(null)
+                  }}>
+                    {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Gerar vídeo
+                  </button>
+                )}
+                {post.slides.some(x => !x.image_url && !x.video_prompt) && (
                   <button className="btn-outline !py-1 !px-2.5 text-xs" disabled={!!gen} onClick={() => genImages(post)}>
                     {gen ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Gerar imagens
                   </button>
@@ -402,7 +449,7 @@ export default function SocialPostsTab() {
                 {post.ig_media_id && <span className="badge bg-emerald-100 text-emerald-700 text-[10px]">publicado no insta</span>}
                 {post.scheduled_at && !post.ig_media_id && <span className="badge bg-amber-100 text-amber-700 text-[10px]"><CalendarClock className="h-3 w-3" /> {fmtDate(post.scheduled_at)}</span>}
                 {post.publish_error && <span className="badge bg-red-100 text-red-600 text-[10px]" title={post.publish_error}>erro ao publicar</span>}
-                {ig?.connected && !post.ig_media_id && post.slides.some(x => x.image_url) && (
+                {ig?.connected && !post.ig_media_id && post.slides.some(x => x.image_url || x.video_url) && (
                   <>
                     <button className="btn-primary !py-1 !px-2.5 text-xs" disabled={publishing === post.id} onClick={() => publishNow(post)}>
                       {publishing === post.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Instagram className="h-3 w-3" />} Publicar
