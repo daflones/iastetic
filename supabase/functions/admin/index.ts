@@ -442,7 +442,7 @@ Deno.serve(async (req) => {
         const slide = post?.slides?.[idx]
         if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Cena inválida.')
 
-        // provedor: 'nvidia' = Cosmos3 Nano (endpoint grátis, vídeo mudo) | 'openrouter' = Veo (com áudio/fala)
+        // provedor: 'nvidia' = Cosmos3 Nano (grátis, mudo) | 'cheap' = modelo econômico OpenRouter (mudo → TTS+mux) | 'openrouter' = Veo (áudio/fala nativo)
         const provider = (str(body.provider, 12) || (await getSecret('VIDEO_PROVIDER')) || 'openrouter').toLowerCase()
 
         if (provider === 'nvidia') {
@@ -451,7 +451,10 @@ Deno.serve(async (req) => {
           const res = await fetch('https://ai.api.nvidia.com/v1/cosmos/nvidia/cosmos3-nano', {
             method: 'POST',
             headers: { Authorization: `Bearer ${nvKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_mode: 'text2video', prompt: slide.video_prompt ?? '' }),
+            body: JSON.stringify({
+              model_mode: 'text2video', prompt: slide.video_prompt ?? '',
+              resolution: '480_9_16', num_frames: 121, num_inference_steps: 35, fps: 24, seed: Math.floor(Math.random() * 1e9),
+            }),
             signal: AbortSignal.timeout(240_000),
           })
           const data = await res.json().catch(() => ({}))
@@ -473,8 +476,11 @@ Deno.serve(async (req) => {
           method: 'POST',
           headers: { Authorization: `Bearer ${orKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: (await getSecret('VIDEO_MODEL')) ?? 'google/veo-3.1-fast',
-            prompt: slide.video_prompt ?? '', aspect_ratio: '9:16', duration: 8, resolution: '720p', generate_audio: true,
+            model: provider === 'cheap'
+              ? ((await getSecret('VIDEO_MODEL_CHEAP')) ?? 'bytedance/seedance-2.0-mini')
+              : ((await getSecret('VIDEO_MODEL')) ?? 'google/veo-3.1-fast'),
+            prompt: slide.video_prompt ?? '', aspect_ratio: '9:16', duration: 8, resolution: '720p',
+            generate_audio: provider !== 'cheap',
           }),
         })
         const job = await res.json().catch(() => ({}))

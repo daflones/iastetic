@@ -318,7 +318,7 @@ export default function SocialPostsTab() {
 
   async function renderScene(postId: string, i: number, total: number, useVeo: boolean) {
     setGen(`Renderizando cena ${i + 1}/${total} (${useVeo ? 'Veo' : 'NVIDIA'} — ~1min)…`)
-    await callFn('admin', { action: 'social_gen_scene', post_id: postId, index: i, provider: useVeo ? 'openrouter' : 'nvidia' })
+    await callFn('admin', { action: 'social_gen_scene', post_id: postId, index: i, provider: useVeo ? 'openrouter' : 'cheap' })
     for (let t = 0; t < 40; t++) {
       await new Promise(r => setTimeout(r, 6000))
       const st = await callFn<{ status: string; video_url?: string }>('admin', { action: 'social_scene_status', post_id: postId, index: i }).catch(() => ({ status: 'generating' } as any))
@@ -377,10 +377,10 @@ export default function SocialPostsTab() {
         <div className="p-4 border-b border-line flex items-center gap-2">
           <Megaphone className="h-4 w-4 text-brand-500" />
           <p className="font-semibold text-sm">Marqueteira</p>
-          <button onClick={() => setVeo(!veo)} title={veo ? 'Veo ligado: vídeo já sai com fala embutida (pago ~$1/cena)' : 'Grátis: NVIDIA Cosmos + narração ElevenLabs montada no vídeo'}
+          <button onClick={() => setVeo(!veo)} title={veo ? 'Veo ligado: vídeo já sai com fala embutida (pago ~$1/cena)' : 'Econômico: modelo barato de vídeo + narração ElevenLabs montada no vídeo'}
             className={clsx('ml-auto flex items-center gap-1.5 text-[10px] font-medium rounded-full px-2.5 py-1 transition', veo ? 'bg-brand-100 text-brand-700' : 'bg-emerald-100 text-emerald-700')}>
             <span className={clsx('h-1.5 w-1.5 rounded-full', veo ? 'bg-brand-500' : 'bg-emerald-500')} />
-            {veo ? 'Veo (áudio nativo)' : 'Grátis + voz IA'}
+            {veo ? 'Veo (áudio nativo)' : 'Econômico + voz IA'}
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
