@@ -29,7 +29,9 @@ draft = {
   "hashtags": ["#salao", "#barbearia", "...até 12"]
 }
 
-image_prompt (em INGLÊS, pra qualidade máxima): "vertical 9:16 portrait photo, photorealistic, cinematic lighting, Brazilian setting" + cena que REPRESENTA a emoção do slide (ex.: manicure cansada olhando celular cheio de mensagens à noite / dona sorrindo com agenda cheia / celular com WhatsApp). NÃO peça texto dentro da imagem — o texto é sobreposto depois. Varie nichos/cenas entre os slides e entre posts (salão, unha, olhar, barbearia, clínica).`
+image_prompt (sempre em INGLÊS, pra qualidade máxima): "vertical 9:16 portrait photo, photorealistic, cinematic editorial photography, Brazilian real person with natural skin and authentic expression, premium beauty-business setting, shallow depth of field, warm professional lighting" + cena que REPRESENTA a emoção do slide (ex.: tired manicurist looking at phone full of unread messages at night / happy salon owner showing a fully-booked schedule / client's POV of WhatsApp chat on phone). REGRAS: (a) pessoas brasileiras realistas e diversas — nunca manequins/stock genérico; (b) profundidade e composição editorial premium; (c) ABSOLUTAMENTE NENHUM texto, letra, número, logo ou interface escrita na imagem — o texto é sobreposto depois em pt-BR correto; (d) varie nichos/cenas entre slides e entre posts (salão, unha, olhar/cílios, barbearia, clínica).
+
+Headline/sub/legenda: português brasileiro impecável — gramática e ortografia revisadas, tom de amiga experiente.`
 
 Deno.serve(async (req) => {
   const pre = cors(req); if (pre) return pre
@@ -435,17 +437,30 @@ Deno.serve(async (req) => {
           messages: [
             { role: 'system', content: SOCIAL_PROMPT },
             ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 2000) })),
-          ], temperature: 0.85, maxTokens: 2500,
+          ], temperature: 0.85, maxTokens: 14000,
         })
         const raw = message.content ?? ''
         const cleaned = raw.replace(/```json|```/g, '').trim()
-        const j = cleaned.match(/\{[\s\S]*\}/)?.[0]
-        try {
-          const parsed = JSON.parse(j ?? cleaned)
-          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null, plan: Array.isArray(parsed.plan) ? parsed.plan.slice(0, 7) : null } })
-        } catch {
-          return json({ ok: true, data: { say: raw.slice(0, 800), draft: null, plan: null } })
+        let parsed: any = null
+        const j = cleaned.match(/\{[\s\S]*/)?.[0]
+        if (j) {
+          try { parsed = JSON.parse(j) } catch {
+            // resposta truncada: corta no último objeto completo e fecha a estrutura
+            const lastComplete = j.lastIndexOf('    }')
+            if (lastComplete > 0) {
+              try { parsed = JSON.parse(j.slice(0, lastComplete + 6) + ']}') } catch { /* tenta abaixo */ }
+            }
+            if (!parsed) {
+              const close = j.lastIndexOf('}')
+              try { parsed = JSON.parse(j.slice(0, close + 1) + ']}') } catch { /* segue */ }
+            }
+          }
         }
+        if (parsed?.plan?.length || parsed?.draft) {
+          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null, plan: Array.isArray(parsed.plan) ? parsed.plan.slice(0, 7) : null } })
+        }
+        const sayOnly = cleaned.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1]
+        return json({ ok: true, data: { say: sayOnly ?? 'Quase consegui — a resposta veio grande demais. Pede de novo dividindo: ex. "programação de 3 posts pra semana".', draft: null, plan: null } })
       }
 
       // ---------- Instagram conectado ----------
