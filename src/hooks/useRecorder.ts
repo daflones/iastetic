@@ -73,9 +73,11 @@ export function useRecorder() {
     const stream = streamRef.current
     if (!stream) return opts.onDone(null)
     const silenceMs = opts.silenceMs ?? 1400
-    const threshold = opts.threshold ?? 0.012
+    const threshold = opts.threshold ?? 0.008
     const ctx = new AudioContext()
     ctxRef.current = ctx
+    // autoplay policy: sem gesto do usuário o contexto nasce suspenso e o analyser lê zero
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {})
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 512
     ctx.createMediaStreamSource(stream).connect(analyser)
@@ -94,7 +96,8 @@ export function useRecorder() {
       if (rms > threshold) { heard = true; silentSince = 0 }
       else if (heard && !silentSince) silentSince = now
       const timedOut = now - t0 > 60_000 // trava de segurança
-      const done = (heard && silentSince && now - silentSince > silenceMs) || timedOut
+      const suspended = ctx.state === 'suspended' && now - t0 > 2500 // microfone ok, mas contexto travado sem gesto
+      const done = (heard && silentSince && now - silentSince > silenceMs) || timedOut || suspended
       if (done) { opts.onDone(await finish()); return }
       rafRef.current = requestAnimationFrame(tick)
     }
