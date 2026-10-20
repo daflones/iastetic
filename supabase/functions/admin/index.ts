@@ -224,6 +224,7 @@ Deno.serve(async (req) => {
           'EVOLUTION_URL', 'EVOLUTION_APIKEY',
           'WEBHOOK_INGRESS_SECRET', 'CRON_SECRET', 'ADMIN_BOOTSTRAP_SECRET', 'PUBLIC_SITE_URL', 'SERPER_API_KEY',
           'META_APP_ID', 'META_APP_SECRET', 'IG_APP_ID', 'IG_APP_SECRET',
+          'VIDEO_PROVIDER', 'VIDEO_MODEL', 'NVIDIA_API_KEY',
         ]
         const { data: row } = await db.from('platform_settings').select('value').eq('key', 'secrets').maybeSingle()
         const dbSecrets = row?.value ?? {}
@@ -435,11 +436,37 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { image_url: pub.publicUrl } })
       }
 
-case 'social_gen_scene': {
+      case 'social_gen_scene': {
         const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
         const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
         const slide = post?.slides?.[idx]
         if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Cena inválida.')
+
+        // provedor: 'nvidia' = Cosmos3 Nano (endpoint grátis, vídeo mudo) | 'openrouter' = Veo (com áudio/fala)
+        const provider = ((await getSecret('VIDEO_PROVIDER')) ?? 'openrouter').toLowerCase()
+
+        if (provider === 'nvidia') {
+          const nvKey = await getSecret('NVIDIA_API_KEY')
+          if (!nvKey) throw new ApiError(400, 'NO_KEY', 'Configure NVIDIA_API_KEY em Integrações.')
+          const res = await fetch('https://ai.api.nvidia.com/v1/cosmos/nvidia/cosmos3-nano', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${nvKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_mode: 'text2video', prompt: slide.video_prompt ?? '' }),
+            signal: AbortSignal.timeout(240_000),
+          })
+          const data = await res.json().catch(() => ({}))
+          const b64 = data.b64_video ?? data.video ?? ''
+          if (!res.ok || !b64) throw new ApiError(502, 'VIDEO_FAILED', `NVIDIA vídeo falhou: ${JSON.stringify(data).slice(0, 200)}`)
+          const bytes = Uint8Array.from(atob(b64.replace(/^data:[^,]+,/, '')), c => c.charCodeAt(0))
+          const path = `reels/${postId}/${idx}-${crypto.randomUUID().slice(0, 8)}.mp4`
+          const { error: upErr } = await db.storage.from('prospect').upload(path, bytes, { contentType: 'video/mp4' })
+          if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
+          const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+          const slides = [...post.slides]; slides[idx] = { ...slide, video_url: pub.publicUrl, job_url: null }
+          await db.from('social_posts').update({ slides }).eq('id', postId)
+          return json({ ok: true, data: { status: 'done', video_url: pub.publicUrl } })
+        }
+
         const orKey = await getSecret('OPENROUTER_API_KEY')
         if (!orKey) throw new ApiError(400, 'NO_KEY', 'Configure OPENROUTER_API_KEY em Integrações.')
         const res = await fetch('https://openrouter.ai/api/v1/videos', {
@@ -457,7 +484,6 @@ case 'social_gen_scene': {
         await db.from('social_posts').update({ slides }).eq('id', postId)
         return json({ ok: true, data: { status: 'generating' } })
       }
-
       case 'social_scene_status': {
         const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
         const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
