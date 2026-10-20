@@ -429,10 +429,13 @@ Deno.serve(async (req) => {
 
       case 'social_assistant': {
         const history: ChatMessage[] = Array.isArray(body.history) ? body.history.slice(-14) : []
-        const raw = await chat([
-          { role: 'system', content: SOCIAL_PROMPT },
-          ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 2000) })),
-        ], { temperature: 0.85 })
+        const { message } = await chat({
+          messages: [
+            { role: 'system', content: SOCIAL_PROMPT },
+            ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 2000) })),
+          ], temperature: 0.85, maxTokens: 2500,
+        })
+        const raw = message.content ?? ''
         const cleaned = raw.replace(/```json|```/g, '').trim()
         const j = cleaned.match(/\{[\s\S]*\}/)?.[0]
         try {

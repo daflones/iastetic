@@ -5,6 +5,7 @@ function Instagram({ className }: { className?: string }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
 }
 import { callFn, fmtDate, FUNCTIONS_URL } from '@/lib/supabase'
+import { useDraft } from '@/hooks/useDraft'
 import clsx from 'clsx'
 
 type Slide = { role: 'dor' | 'solucao' | 'cta'; headline: string; sub: string; image_url?: string; image_prompt?: string }
@@ -177,8 +178,8 @@ function SlidePreview({ slide }: { slide: Slide }) {
 
 export default function SocialPostsTab() {
   const [posts, setPosts] = useState<SocialPost[]>([])
-  const [msgs, setMsgs] = useState<{ role: 'user' | 'assistant'; content: string; draft?: Draft }[]>([])
-  const [input, setInput] = useState('')
+  const [msgs, setMsgs] = useDraft<{ role: 'user' | 'assistant'; content: string; draft?: Draft }[]>('marqueteira:msgs', [])
+  const [input, setInput] = useDraft('marqueteira:input', '')
   const [busy, setBusy] = useState(false)
   const [gen, setGen] = useState<string | null>(null)
   const [ig, setIg] = useState<IgStatus | null>(null)
