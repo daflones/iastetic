@@ -22,22 +22,19 @@ const ROLE_META: Record<string, { label: string; cls: string }> = {
 }
 const STATUS: Record<string, string> = { rascunho: 'bg-slate-100 text-slate-600', pronto: 'bg-emerald-100 text-emerald-700', publicado: 'bg-brand-100 text-brand-700' }
 
-/** Junta vídeo mudo + narração ElevenLabs num MP4 só (ffmpeg.wasm via CDN). */
+/** Junta vídeo mudo + narração ElevenLabs num MP4 só (ffmpeg.wasm empacotado). */
+let ffmpeg: import('@ffmpeg/ffmpeg').FFmpeg | null = null
 async function muxVoice(videoUrl: string, audioDataUrl: string): Promise<string> {
-  const dynImport = new Function('u', 'return import(u)') as (u: string) => Promise<any>
-  const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([dynImport('https://esm.sh/@ffmpeg/ffmpeg@0.12.10'), dynImport('https://esm.sh/@ffmpeg/util@0.12.1')])
-  const ffmpeg = new FFmpeg()
-  const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-  })
+  const [{ FFmpeg }, { fetchFile }] = await Promise.all([import('@ffmpeg/ffmpeg'), import('@ffmpeg/util')])
+  if (!ffmpeg) {
+    ffmpeg = new FFmpeg()
+    await ffmpeg.load({ coreURL: '/ffmpeg/ffmpeg-core.js', wasmURL: '/ffmpeg/ffmpeg-core.wasm' })
+  }
   await ffmpeg.writeFile('v.mp4', await fetchFile(videoUrl))
   await ffmpeg.writeFile('a.mp3', await fetchFile(audioDataUrl))
   await ffmpeg.exec(['-i', 'v.mp4', '-i', 'a.mp3', '-c:v', 'copy', '-c:a', 'aac', '-shortest', 'out.mp4'])
   const data = await ffmpeg.readFile('out.mp4')
-  ffmpeg.terminate()
-  const blob = new Blob([data], { type: 'video/mp4' })
+  const blob = new Blob([new Uint8Array(data as Uint8Array)], { type: 'video/mp4' })
   return await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(r.result as string); r.readAsDataURL(blob) })
 }
 
