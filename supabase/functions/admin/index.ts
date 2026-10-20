@@ -5,6 +5,30 @@ import { chat, generateImage, transcribeAudio, type ChatMessage } from '../_shar
 import { getSecret } from '../_shared/secrets.ts'
 
 // Painel administrativo da plataforma IAstetic
+
+const SOCIAL_PROMPT = `Você é a "Marqueteira", diretora de conteúdo do IAstetic — especialista em Instagram para negócios de beleza.
+
+O PRODUTO: IAstetic é uma recepcionista com IA no WhatsApp de salões de cabelo, manicure/pedicure, studios de sobrancelha & cílios, barbearias e clínicas de estética. Ela atende 24h, agenda de verdade, remarca, cobra sinal no Pix, manda lembretes e faz follow-up — com voz humana. Site: iastetic.com.br. Oferta: 7 dias grátis.
+
+SEU TRABALHO: criar CARROSSÉIS de 3 slides (9:16) na estrutura DOR → SOLUÇÃO → CTA + legenda + hashtags. Tom: brasileiro, direto, emocional, fala com a dona/dono do estabelecimento como amiga — nunca corporativo.
+
+Responda SEMPRE em JSON válido:
+- Se faltar contexto (tema, público, oferta): {"say": "pergunta curta"}
+- Quando pronto pra gerar: {"say": "resumo da ideia em 1-2 linhas", "draft": {...}}
+
+draft = {
+  "title": "nome interno curto do post",
+  "slides": [
+    {"role": "dor",     "headline": "máx 7 palavras, soco na ferida", "sub": "1 linha de apoio", "image_prompt": "..."},
+    {"role": "solucao", "headline": "a virada — o que a IA resolve",  "sub": "1 linha",           "image_prompt": "..."},
+    {"role": "cta",     "headline": "chamada direta",                 "sub": "ex.: link na bio · 7 dias grátis", "image_prompt": "..."}
+  ],
+  "caption": "legenda completa com emojis e quebras de linha, terminando em CTA pro site",
+  "hashtags": ["#salao", "#barbearia", "...até 12"]
+}
+
+image_prompt (em INGLÊS, pra qualidade máxima): "vertical 9:16 portrait photo, photorealistic, cinematic lighting, Brazilian setting" + cena que REPRESENTA a emoção do slide (ex.: manicure cansada olhando celular cheio de mensagens à noite / dona sorrindo com agenda cheia / celular com WhatsApp). NÃO peça texto dentro da imagem — o texto é sobreposto depois. Varie nichos/cenas entre os slides e entre posts (salão, unha, olhar, barbearia, clínica).`
+
 Deno.serve(async (req) => {
   const pre = cors(req); if (pre) return pre
   try {
@@ -355,6 +379,66 @@ Deno.serve(async (req) => {
           out.push({ ...c, pending: pending ?? 0, failed: failed ?? 0, total: total ?? 0 })
         }
         return json({ ok: true, data: out })
+      }
+
+      // ================= POSTS DE INSTAGRAM (Marqueteira) =================
+      case 'social_posts': {
+        const { data } = await db.from('social_posts').select('*').order('created_at', { ascending: false }).limit(60)
+        return json({ ok: true, data: data ?? [] })
+      }
+
+      case 'social_post_save': {
+        const row = {
+          title: str(body.title, 120) || 'Post sem título',
+          slides: Array.isArray(body.slides) ? body.slides.slice(0, 8) : [],
+          caption: str(body.caption, 4000),
+          hashtags: Array.isArray(body.hashtags) ? body.hashtags.map((h: unknown) => String(h).slice(0, 40)) : [],
+          status: ['rascunho', 'pronto', 'publicado'].includes(body.status) ? body.status : 'rascunho',
+        }
+        if (body.id) {
+          await db.from('social_posts').update(row).eq('id', str(body.id, 64))
+          return json({ ok: true, data: { id: body.id } })
+        }
+        const { data: post } = await db.from('social_posts').insert({ ...row }).select('id').single()
+        return json({ ok: true, data: { id: post?.id } })
+      }
+
+      case 'social_post_delete': {
+        await db.from('social_posts').delete().eq('id', str(body.id, 64))
+        return json({ ok: true })
+      }
+
+      case 'social_gen_slide': {
+        const postId = str(body.post_id, 64), idx = Math.max(0, Number(body.index) | 0)
+        const { data: post } = await db.from('social_posts').select('id,slides').eq('id', postId).single()
+        if (!post) throw new ApiError(404, 'NOT_FOUND', 'Post não encontrado.')
+        const slides = Array.isArray(post.slides) ? [...post.slides] : []
+        const slide = slides[idx]; if (!slide) throw new ApiError(400, 'BAD_INDEX', 'Slide inválido.')
+        const img = await generateImage(slide.image_prompt ?? body.image_prompt ?? '', { width: 576, height: 1024 })
+        const bytes = Uint8Array.from(atob(img.base64), c => c.charCodeAt(0))
+        const path = `posts/${postId}/${idx}-${crypto.randomUUID().slice(0, 8)}.png`
+        const { error: upErr } = await db.storage.from('prospect').upload(path, bytes, { contentType: img.mime })
+        if (upErr) throw new ApiError(500, 'UPLOAD_FAILED', upErr.message)
+        const { data: pub } = db.storage.from('prospect').getPublicUrl(path)
+        slides[idx] = { ...slide, image_url: pub.publicUrl }
+        await db.from('social_posts').update({ slides }).eq('id', postId)
+        return json({ ok: true, data: { image_url: pub.publicUrl } })
+      }
+
+      case 'social_assistant': {
+        const history: ChatMessage[] = Array.isArray(body.history) ? body.history.slice(-14) : []
+        const raw = await chat([
+          { role: 'system', content: SOCIAL_PROMPT },
+          ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 2000) })),
+        ], { temperature: 0.85 })
+        const cleaned = raw.replace(/```json|```/g, '').trim()
+        const j = cleaned.match(/\{[\s\S]*\}/)?.[0]
+        try {
+          const parsed = JSON.parse(j ?? cleaned)
+          return json({ ok: true, data: { say: String(parsed.say ?? ''), draft: parsed.draft ?? null } })
+        } catch {
+          return json({ ok: true, data: { say: raw.slice(0, 800), draft: null } })
+        }
       }
 
       case 'prospect_campaign_launch': {

@@ -15,6 +15,7 @@ import {
 import { callFn, brl, fmtDate, supabase } from '@/lib/supabase'
 import { maskPhoneBR } from '@/lib/validators'
 import Pagination, { usePaged } from '@/components/ui/Pagination'
+import SocialPostsTab from '@/pages/admin/SocialPostsTab'
 import { useAuth } from '@/hooks/useAuth'
 import { NICHES } from '@/lib/niches'
 import NicheArt from '@/components/ui/NicheArt'
@@ -23,7 +24,7 @@ import { useRecorder } from '@/hooks/useRecorder'
 import { QRCodeSVG } from 'qrcode.react'
 import clsx from 'clsx'
 
-type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'support' | 'prospect' | 'whatsapp' | 'assistant' | 'integrations' | 'settings'
+type Tab = 'overview' | 'companies' | 'plans' | 'payments' | 'support' | 'prospect' | 'whatsapp' | 'assistant' | 'posts' | 'integrations' | 'settings'
 
 const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] = [
   {
@@ -42,6 +43,7 @@ const NAV: { title: string; items: { id: Tab; label: string; icon: any }[] }[] =
       { id: 'whatsapp', label: 'WhatsApp do admin', icon: QrCode },
       { id: 'support', label: 'Suporte', icon: LifeBuoy },
       { id: 'assistant', label: 'Assistente', icon: BrainCircuit },
+      { id: 'posts', label: 'Posts', icon: Megaphone },
       { id: 'integrations', label: 'Integrações', icon: KeyRound },
       { id: 'settings', label: 'Taxas', icon: CreditCard },
     ],
@@ -440,6 +442,7 @@ export default function AdminPage() {
           {tab === 'support' && <SupportCard />}
           {tab === 'whatsapp' && <AdminWhatsappCard />}
           {tab === 'assistant' && <AdminAssistantCard />}
+          {tab === 'posts' && <SocialPostsTab />}
           {tab === 'integrations' && <SecretsCard />}
           {tab === 'settings' && <FeesCard />}
         </main>
