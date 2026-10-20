@@ -20,7 +20,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { NICHES } from '@/lib/niches'
 import NicheArt from '@/components/ui/NicheArt'
 import { useDraft } from '@/hooks/useDraft'
-import { useRecorder } from '@/hooks/useRecorder'
+import { useRecorder, unlockMicAudio } from '@/hooks/useRecorder'
 import { QRCodeSVG } from 'qrcode.react'
 import clsx from 'clsx'
 
@@ -898,7 +898,7 @@ function AdminAssistantCard() {
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle')
   const [micError, setMicError] = useState(false)
   const [retry, setRetry] = useState(0)
-  const { level, startAuto, cancel } = useRecorder()
+  const { level, startAuto, cancel, ctxState } = useRecorder()
   const player = useRef<HTMLAudioElement | null>(null)
   const loopRef = useRef(0)
   const msgsRef = useRef(messages)
@@ -1012,7 +1012,7 @@ function AdminAssistantCard() {
             {status === 'thinking' && <span className="absolute h-28 w-28 rounded-full border-2 border-brand-400/40 border-t-brand-500 animate-spin" />}
             {status === 'speaking' && <span className="absolute h-32 w-32 rounded-full bg-brand-500/15 animate-pulse" />}
             <button
-              onClick={() => { setMicError(false); setRetry(r => r + 1) }}
+              onClick={() => { unlockMicAudio(); setMicError(false); setRetry(r => r + 1) }}
               className="relative h-24 w-24 rounded-full grid place-items-center transition-transform shadow-xl shadow-brand-500/30"
               style={{
                 background: 'radial-gradient(circle at 35% 30%, #c4b5fd, #8b5cf6 55%, #5b21b6)',
@@ -1030,6 +1030,7 @@ function AdminAssistantCard() {
           <p className="mt-5 text-xs font-medium text-ink-soft">{micError ? 'sem acesso ao microfone — toque pra tentar de novo' : STATUS_TXT[status]}</p>
           {lastAssistant && <p className="mt-2 text-[11px] text-ink-muted text-center max-w-sm line-clamp-2 italic">"{lastAssistant}"</p>}
           <p className="mt-3 text-[10px] text-ink-muted/70">diga “quero escrever com você” para mudar pro modo texto</p>
+          {status === 'listening' && <p className="mt-1 text-[9px] font-mono text-ink-muted/50">mic {ctxState()} · vol {(level / 10).toFixed(3)}</p>}
         </div>
       )}
 
