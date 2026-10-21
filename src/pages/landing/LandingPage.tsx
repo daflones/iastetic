@@ -442,9 +442,29 @@ function LiveDemo({ niche, onNicheChange, fill }: { niche: NicheId; onNicheChang
           </div>
         )}
         {done && (
-          <div className="text-center py-3">
-            <Link to="/cadastro" className="btn-primary text-xs">Criar conta e conectar meu WhatsApp <ArrowRight className="h-3.5 w-3.5" /></Link>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-2xl border border-brand-200 bg-gradient-to-br from-brand-500 via-brand-600 to-accent-700 p-4 sm:p-5 text-white text-center shadow-glow">
+            <div className="absolute -top-8 -right-8 h-24 w-24 rounded-full bg-white/10 blur-xl" />
+            <div className="absolute -bottom-10 -left-10 h-28 w-28 rounded-full bg-white/10 blur-xl" />
+            <div className="relative">
+              <Sparkles className="h-6 w-6 mx-auto mb-2 text-amber-200" />
+              <p className="font-display font-bold text-base sm:text-lg leading-snug">
+                Parece que você gostou — esgotou suas 3 mensagens de demonstração! 😄
+              </p>
+              <p className="mt-1.5 text-[12px] sm:text-sm text-white/85 leading-relaxed">
+                Imagina ela atendendo suas clientes <b>de verdade, 24h por dia</b>, enquanto você trabalha?
+                Teste grátis por <b>7 dias</b> — sem cartão, leva minutos pra conectar.
+              </p>
+              <Link to="/cadastro"
+                className="mt-3.5 inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-brand-700 shadow-lg hover:scale-[1.03] hover:shadow-xl transition">
+                Começar meu teste grátis <ArrowRight className="h-4 w-4" />
+              </Link>
+              <p className="mt-2 text-[10px] text-white/70">sem compromisso · cancele quando quiser</p>
+            </div>
+          </motion.div>
         )}
       </div>
       {/* input */}
