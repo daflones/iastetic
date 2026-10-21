@@ -5,7 +5,9 @@ import { logUsage, synthesizeSpeech } from '../_shared/nvidia.ts'
 import type { ChatMessage } from '../_shared/nvidia.ts'
 
 const MAX_TURNS = 3
-const MAX_PER_IP_PER_DAY = 5
+const MAX_PER_IP_PER_DAY = 3        // sessões novas por IP/dia
+const MAX_MSGS_PER_IP_DAY = 9       // mensagens de IA no total por IP/dia
+const REUSE_WINDOW_MS = 6 * 3600_000 // sessão aberta do mesmo IP é reaproveitada
 
 Deno.serve(async (req) => {
   const pre = cors(req); if (pre) return pre
@@ -23,9 +25,19 @@ Deno.serve(async (req) => {
       session = data
     }
     if (!session) {
-      // limite por IP/dia
-      const { count } = await db.from('demo_sessions').select('id', { count: 'exact', head: true }).eq('ip_hash', ipHash).gte('created_at', new Date(Date.now() - 86_400_000).toISOString())
-      if ((count ?? 0) >= MAX_PER_IP_PER_DAY) throw new ApiError(429, 'RATE_LIMIT', 'Limite de demonstrações atingido. Crie sua conta para continuar.')
+      // anti-refresh: reaproveita sessão aberta do mesmo IP em vez de criar outra
+      const { data: open } = await db.from('demo_sessions').select('*')
+        .eq('ip_hash', ipHash).lt('turns', MAX_TURNS)
+        .gte('updated_at', new Date(Date.now() - REUSE_WINDOW_MS).toISOString())
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      session = open
+    }
+    if (!session) {
+      // tetos por IP/dia: quantidade de sessões E total de mensagens já gastas
+      const { data: rows } = await db.from('demo_sessions').select('turns').eq('ip_hash', ipHash).gte('created_at', new Date(Date.now() - 86_400_000).toISOString())
+      const used = (rows ?? []).reduce((a: number, r: any) => a + (r.turns ?? 0), 0)
+      if (used >= MAX_MSGS_PER_IP_DAY || (rows?.length ?? 0) >= MAX_PER_IP_PER_DAY)
+        throw new ApiError(429, 'RATE_LIMIT', 'Você já explorou bastante a demo hoje 😊 Crie sua conta grátis pra continuar — são 7 dias de teste.')
       const { data } = await db.from('demo_sessions').insert({ niche, ip_hash: ipHash }).select().single()
       session = data
     }

@@ -376,6 +376,14 @@ function LiveDemo({ niche, onNicheChange, fill }: { niche: NicheId; onNicheChang
   const n = NICHES[niche]
 
   useEffect(() => {
+    // restaura sessão salva (refresh não reinicia nem gasta sessão nova)
+    try {
+      const saved = localStorage.getItem(`iastetic_demo_${niche}`)
+      if (saved) {
+        const st = JSON.parse(saved)
+        if (st?.msgs?.length) { setMsgs(st.msgs); setSessionId(st.sessionId ?? null); setDone(!!st.done); return }
+      }
+    } catch { /* storage indisponível */ }
     const aiName = n.aiNameSuggestions[0] ?? 'Íris'
     const role = niche === 'barbearia' ? `o ${aiName}, atendente virtual` : `a ${aiName}, recepcionista virtual`
     setMsgs([{ role: 'ai', text: `Oi! Eu sou ${role} da demonstração de ${n.name}. Pergunte preços, peça horários ou mande "quero agendar". É um teste à vontade!` }])
@@ -397,10 +405,16 @@ function LiveDemo({ niche, onNicheChange, fill }: { niche: NicheId; onNicheChang
       })
       const data = await res.json()
       const reply = data?.data?.reply ?? data?.error?.message ?? 'Ops, tente de novo.'
-      setSessionId(data?.data?.session_id ?? sessionId)
-      setDone(!!data?.data?.done)
+      const sid = data?.data?.session_id ?? sessionId
+      const isDone = !!data?.data?.done || res.status === 429
+      setSessionId(sid)
+      setDone(isDone)
       const audio = data?.data?.audio_b64 ? `data:${data.data.audio_mime ?? 'audio/mpeg'};base64,${data.data.audio_b64}` : undefined
-      setMsgs(m => [...m, { role: 'ai', text: reply, audio }])
+      setMsgs(m => {
+        const next = [...m, { role: 'ai' as const, text: reply, audio }]
+        try { localStorage.setItem(`iastetic_demo_${niche}`, JSON.stringify({ msgs: next.slice(-20), sessionId: sid, done: isDone })) } catch { /* ok */ }
+        return next
+      })
     } catch {
       setMsgs(m => [...m, { role: 'ai', text: 'Conexão falhou — tente de novo em instantes.' }])
     } finally { setBusy(false) }
